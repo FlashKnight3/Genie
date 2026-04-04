@@ -17,76 +17,21 @@ logger = logging.getLogger(__name__)
 TOOL_DEFINITIONS = [
     {
         "name": "send_message",
-        "description": "Send a message to a subcontractor and log it in the system.",
+        "description": (
+            "Send a message to a subcontractor via SMS or email and log it. "
+            "Use channel='sms' for short urgent messages, 'email' for longer formal ones. "
+            "Sends a real SMS via Twilio or real email via Resend when credentials are configured."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "subcontractor_id": {"type": "string"},
-                "channel": {"type": "string", "description": "email, sms, or slack"},
-                "subject": {"type": "string"},
-                "body": {"type": "string"},
-                "job_id": {"type": "string", "description": "Associated job ID (optional)"},
+                "channel": {"type": "string", "description": "sms or email"},
+                "subject": {"type": "string", "description": "SMS: used as log label only. Email: becomes the subject line."},
+                "body": {"type": "string", "description": "The message text. Keep SMS under 160 characters."},
+                "job_id": {"type": "string", "description": "Associated job ID"},
             },
             "required": ["subcontractor_id", "channel", "subject", "body"],
-        },
-    },
-    {
-        "name": "get_message_thread",
-        "description": "Get the full message thread between the system and a subcontractor for a job.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "subcontractor_id": {"type": "string"},
-                "job_id": {"type": "string"},
-            },
-            "required": ["subcontractor_id"],
-        },
-    },
-    {
-        "name": "get_subcontractor_contact",
-        "description": "Get contact details (email, phone) for a subcontractor.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "subcontractor_id": {"type": "string"},
-            },
-            "required": ["subcontractor_id"],
-        },
-    },
-    {
-        "name": "mark_message_read",
-        "description": "Mark a message as read.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "message_id": {"type": "string"},
-            },
-            "required": ["message_id"],
-        },
-    },
-    {
-        "name": "get_pending_responses",
-        "description": "Get unread inbound messages for a job.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "job_id": {"type": "string"},
-            },
-            "required": ["job_id"],
-        },
-    },
-    {
-        "name": "log_inbound_message",
-        "description": "Simulate an inbound reply from a subcontractor.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "subcontractor_id": {"type": "string"},
-                "job_id": {"type": "string"},
-                "body": {"type": "string"},
-                "channel": {"type": "string"},
-            },
-            "required": ["subcontractor_id", "body"],
         },
     },
 ]

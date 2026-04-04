@@ -81,4 +81,10 @@ export const api = {
   quote: {
     draft: (body) => apiFetch('/quote', { method: 'POST', body: JSON.stringify(body) }),
   },
+
+  profile: {
+    get: () => apiFetch('/api/profile'),
+    update: (body) =>
+      apiFetch('/api/profile', { method: 'PATCH', body: JSON.stringify(body) }),
+  },
 };

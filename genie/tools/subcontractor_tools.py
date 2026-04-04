@@ -21,41 +21,6 @@ TOOL_DEFINITIONS = [
             "required": [],
         },
     },
-    {
-        "name": "get_subcontractor",
-        "description": "Get full profile of a subcontractor by ID.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "subcontractor_id": {"type": "string", "description": "UUID of the subcontractor"},
-            },
-            "required": ["subcontractor_id"],
-        },
-    },
-    {
-        "name": "update_subcontractor_availability",
-        "description": "Update a subcontractor's availability status.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "subcontractor_id": {"type": "string"},
-                "availability_status": {"type": "string", "description": "available, busy, or unavailable"},
-            },
-            "required": ["subcontractor_id", "availability_status"],
-        },
-    },
-    {
-        "name": "rate_subcontractor",
-        "description": "Update a subcontractor's rating and increment completed_jobs count.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "subcontractor_id": {"type": "string"},
-                "new_rating": {"type": "number", "description": "New average rating (0-5)"},
-            },
-            "required": ["subcontractor_id", "new_rating"],
-        },
-    },
 ]
 
 

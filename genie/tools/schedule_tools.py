@@ -76,14 +76,6 @@ TOOL_DEFINITIONS = [
             "required": ["subcontractor_id", "duration_hours", "earliest_start", "deadline"],
         },
     },
-    {
-        "name": "get_full_schedule",
-        "description": "Get all scheduled jobs across all subcontractors.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
 ]
 
 

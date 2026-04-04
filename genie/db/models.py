@@ -128,6 +128,20 @@ class AgentLog(Base):
     job: Mapped[Optional["Job"]] = relationship("Job", back_populates="agent_logs")
 
 
+class UserProfile(Base):
+    """Maps to Supabase Auth user id (`sub` claim). Used for onboarding and display."""
+
+    __tablename__ = "user_profiles"
+
+    user_id: Mapped[str] = mapped_column(String, primary_key=True)
+    email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    display_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    company_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    onboarding_completed: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class Lead(Base):
     __tablename__ = "leads"
 

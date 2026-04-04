@@ -52,17 +52,6 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "list_jobs",
-        "description": "List jobs with optional status filter.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "status": {"type": "string", "description": "Filter by status (optional)"},
-                "priority": {"type": "string", "description": "Filter by priority (optional)"},
-            },
-        },
-    },
-    {
         "name": "assign_subcontractor",
         "description": "Assign a subcontractor to a job and update job status to 'assigned'.",
         "input_schema": {
@@ -72,17 +61,6 @@ TOOL_DEFINITIONS = [
                 "subcontractor_id": {"type": "string"},
             },
             "required": ["job_id", "subcontractor_id"],
-        },
-    },
-    {
-        "name": "get_job_timeline",
-        "description": "Get a timeline summary for a job including schedule, risks, and messages.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "job_id": {"type": "string"},
-            },
-            "required": ["job_id"],
         },
     },
 ]

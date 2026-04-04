@@ -1,37 +1,29 @@
 """Tools for risk detection, scoring, and management."""
-import random
+import logging
 import uuid
 from datetime import datetime
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from genie.db.models import Job, Risk, Schedule, Subcontractor
 
+logger = logging.getLogger(__name__)
+
 
 TOOL_DEFINITIONS = [
     {
         "name": "get_weather_forecast",
-        "description": "Get a simulated weather forecast for a location and date range. Returns conditions that may affect job execution.",
+        "description": "Get a real weather forecast for a location and date range (uses Open-Meteo). Returns conditions that may affect job execution.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "location": {"type": "string"},
-                "start_date": {"type": "string", "description": "ISO date string"},
-                "end_date": {"type": "string", "description": "ISO date string"},
+                "location": {"type": "string", "description": "City and state, e.g. 'Austin, TX'"},
+                "start_date": {"type": "string", "description": "ISO date string YYYY-MM-DD"},
+                "end_date": {"type": "string", "description": "ISO date string YYYY-MM-DD (optional, defaults to start_date)"},
             },
             "required": ["location", "start_date"],
-        },
-    },
-    {
-        "name": "check_subcontractor_reliability",
-        "description": "Check historical reliability of a subcontractor based on rating and job history.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "subcontractor_id": {"type": "string"},
-            },
-            "required": ["subcontractor_id"],
         },
     },
     {
@@ -60,18 +52,6 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "resolve_risk",
-        "description": "Mark a risk as resolved with a description of the action taken.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "risk_id": {"type": "string"},
-                "resolution_action": {"type": "string"},
-            },
-            "required": ["risk_id", "resolution_action"],
-        },
-    },
-    {
         "name": "get_active_risks",
         "description": "Get all unresolved risks for a job.",
         "input_schema": {
@@ -82,28 +62,19 @@ TOOL_DEFINITIONS = [
             "required": ["job_id"],
         },
     },
-    {
-        "name": "detect_schedule_conflicts",
-        "description": "Check if the assigned subcontractor has overlapping scheduled jobs.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "job_id": {"type": "string"},
-            },
-            "required": ["job_id"],
-        },
-    },
 ]
 
-# Simulated weather patterns for demo purposes
-_WEATHER_SCENARIOS = [
-    {"condition": "Clear", "temp_f": 78, "wind_mph": 8, "precipitation_chance": 5, "risk_level": "low"},
-    {"condition": "Partly Cloudy", "temp_f": 72, "wind_mph": 12, "precipitation_chance": 20, "risk_level": "low"},
-    {"condition": "Thunderstorms", "temp_f": 68, "wind_mph": 35, "precipitation_chance": 85, "risk_level": "high"},
-    {"condition": "Heavy Rain", "temp_f": 65, "wind_mph": 22, "precipitation_chance": 90, "risk_level": "high"},
-    {"condition": "Extreme Heat", "temp_f": 105, "wind_mph": 5, "precipitation_chance": 2, "risk_level": "medium"},
-    {"condition": "Overcast", "temp_f": 70, "wind_mph": 10, "precipitation_chance": 30, "risk_level": "low"},
-]
+# WMO weather interpretation codes → human-readable + risk level
+_WMO_CODES: dict[int, tuple[str, str]] = {
+    0: ("Clear sky", "low"),
+    1: ("Mainly clear", "low"), 2: ("Partly cloudy", "low"), 3: ("Overcast", "low"),
+    45: ("Fog", "medium"), 48: ("Icing fog", "medium"),
+    51: ("Light drizzle", "low"), 53: ("Moderate drizzle", "low"), 55: ("Dense drizzle", "medium"),
+    61: ("Slight rain", "low"), 63: ("Moderate rain", "medium"), 65: ("Heavy rain", "high"),
+    71: ("Slight snow", "medium"), 73: ("Moderate snow", "high"), 75: ("Heavy snow", "high"),
+    80: ("Slight showers", "low"), 81: ("Moderate showers", "medium"), 82: ("Violent showers", "high"),
+    95: ("Thunderstorm", "high"), 96: ("Thunderstorm + hail", "high"), 99: ("Thunderstorm + heavy hail", "high"),
+}
 
 
 async def get_weather_forecast(
@@ -112,15 +83,101 @@ async def get_weather_forecast(
     start_date: str,
     end_date: str | None = None,
 ) -> dict:
-    # Deterministic-ish simulation based on location hash
-    seed = sum(ord(c) for c in location + start_date) % len(_WEATHER_SCENARIOS)
-    forecast = _WEATHER_SCENARIOS[seed]
+    """Fetch real weather data from Open-Meteo (free, no API key required)."""
+    end = end_date or start_date
+
+    # Geocoding API needs just the city name — strip ", TX" style suffixes
+    city_name = location.split(",")[0].strip()
+
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            # Step 1: geocode the location string
+            geo_resp = await client.get(
+                "https://geocoding-api.open-meteo.com/v1/search",
+                params={"name": city_name, "count": 1, "language": "en", "format": "json"},
+            )
+            geo_data = geo_resp.json()
+            results = geo_data.get("results") or []
+            if not results:
+                return {"error": f"Could not geocode location: {location}", "location": location}
+
+            lat = results[0]["latitude"]
+            lon = results[0]["longitude"]
+            resolved_name = results[0].get("name", location)
+
+            # Step 2: fetch daily forecast
+            wx_resp = await client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "daily": "weathercode,temperature_2m_max,windspeed_10m_max,precipitation_sum",
+                    "temperature_unit": "fahrenheit",
+                    "windspeed_unit": "mph",
+                    "precipitation_unit": "inch",
+                    "timezone": "America/Chicago",
+                    "start_date": start_date,
+                    "end_date": end,
+                },
+            )
+            wx_data = wx_resp.json()
+    except Exception as exc:
+        logger.warning("Open-Meteo request failed: %s", exc)
+        return {
+            "location": location,
+            "start_date": start_date,
+            "end_date": end,
+            "error": "Weather API unavailable — assume acceptable conditions.",
+        }
+
+    daily = wx_data.get("daily", {})
+    dates = daily.get("time", [])
+    codes = daily.get("weathercode", [])
+    max_temps = daily.get("temperature_2m_max", [])
+    wind_speeds = daily.get("windspeed_10m_max", [])
+    precip = daily.get("precipitation_sum", [])
+
+    days = []
+    worst_risk = "low"
+    risk_order = {"low": 0, "medium": 1, "high": 2}
+
+    for i, date in enumerate(dates):
+        code = codes[i] if i < len(codes) else 0
+        condition, risk = _WMO_CODES.get(code, ("Unknown", "low"))
+        temp = max_temps[i] if i < len(max_temps) else None
+        wind = wind_speeds[i] if i < len(wind_speeds) else None
+        rain = precip[i] if i < len(precip) else None
+
+        # Extreme heat is a risk too
+        if temp and temp >= 100:
+            risk = "high" if risk_order[risk] < risk_order["high"] else risk
+            condition = f"Extreme heat ({temp:.0f}°F)"
+
+        if risk_order.get(risk, 0) > risk_order.get(worst_risk, 0):
+            worst_risk = risk
+
+        days.append({
+            "date": date,
+            "condition": condition,
+            "temp_max_f": round(temp, 1) if temp is not None else None,
+            "wind_mph": round(wind, 1) if wind is not None else None,
+            "precip_in": round(rain, 2) if rain is not None else None,
+            "risk_level": risk,
+        })
+
+    advisories = {
+        "low": "Conditions acceptable for work.",
+        "medium": "Monitor conditions — some disruption possible.",
+        "high": "Outdoor work not recommended during affected days.",
+    }
+
     return {
-        "location": location,
+        "location": resolved_name,
         "start_date": start_date,
-        "end_date": end_date or start_date,
-        "forecast": forecast,
-        "advisory": "Outdoor work not recommended." if forecast["risk_level"] == "high" else "Conditions acceptable for work.",
+        "end_date": end,
+        "days": days,
+        "worst_risk_level": worst_risk,
+        "advisory": advisories[worst_risk],
     }
 
 

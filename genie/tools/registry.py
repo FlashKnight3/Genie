@@ -23,42 +23,52 @@ class DelegateBudget:
         self.remaining -= 1
         return True
 
-# Maps agent name → set of tool names that agent has access to
+# Maps agent name → set of tool names that agent has access to.
+# Keep each set small — every extra tool adds tokens to every prompt and
+# gives Claude more ways to go off-script.
 AGENT_TOOL_PERMISSIONS: dict[str, set[str]] = {
+    # Orchestrator: read the job, update status, assign directly, delegate.
     "project_manager": {
-        "get_job", "update_job_status", "list_jobs", "get_job_timeline",
-        "assign_subcontractor", "get_active_risks", "calculate_risk_score",
+        "get_job",
+        "update_job_status",
+        "assign_subcontractor",
         "delegate_to_agent",
     },
+    # Finds best-fit sub and assigns them.
     "matching": {
-        "search_subcontractors", "get_subcontractor", "update_subcontractor_availability",
-        "check_subcontractor_schedule", "assign_subcontractor",
-        "get_job", "detect_conflicts",
-    },
-    "communication": {
-        "send_message", "get_message_thread", "get_subcontractor_contact",
-        "mark_message_read", "get_pending_responses", "log_inbound_message",
         "get_job",
+        "search_subcontractors",
+        "detect_conflicts",
+        "assign_subcontractor",
     },
+    # Sends one targeted message. That's it.
+    "communication": {
+        "get_job",
+        "send_message",
+    },
+    # Scores risk, logs findings, updates status if at-risk.
     "risk": {
-        "get_weather_forecast", "check_subcontractor_reliability", "calculate_risk_score",
-        "create_risk_record", "resolve_risk", "get_active_risks",
-        "detect_schedule_conflicts", "get_job", "update_job_status",
+        "get_job",
+        "get_weather_forecast",
+        "calculate_risk_score",
+        "get_active_risks",
+        "create_risk_record",
+        "update_job_status",
     },
+    # Finds new slot, creates/updates schedule, notifies sub, re-assigns if needed.
     "rescheduling": {
-        "get_schedule", "create_schedule", "update_schedule", "find_available_slots",
-        "detect_conflicts", "get_job", "update_job_status",
-        "search_subcontractors", "assign_subcontractor",
-        "send_message", "get_subcontractor_contact",
-        "create_risk_record", "resolve_risk",
+        "get_job",
+        "find_available_slots",
+        "create_schedule",
+        "update_schedule",
+        "search_subcontractors",
+        "assign_subcontractor",
+        "send_message",
+        "update_job_status",
     },
 }
 
-# Alias tool names used by agents
-_ALIASES: dict[str, str] = {
-    "check_subcontractor_schedule": "detect_conflicts",
-    "get_active_risks": "get_active_risks",
-}
+_ALIASES: dict[str, str] = {}
 
 
 class ToolRegistry:

@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str = ""
     supabase_url: str = ""
     supabase_anon_key: str = ""
+    # When true, API routes (except health/config) require a valid Supabase JWT; SPA gates on login + onboarding
+    require_auth: bool = False
+    # Comma-separated OAuth provider names for signInWithOAuth (google, github, azure, etc.)
+    supabase_oauth_providers: str = "google,github"
+    # Optional: email domain for Supabase SAML / enterprise SSO (signInWithSSO). Requires Supabase SSO on project.
+    supabase_sso_domain: str = ""
 
 
 settings = Settings()

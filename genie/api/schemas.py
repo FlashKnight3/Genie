@@ -98,6 +98,22 @@ class OrchestrateResponse(BaseModel):
     tool_calls_count: int
 
 
+# --- User profile / onboarding ---
+
+class UserProfileOut(BaseModel):
+    user_id: str
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+    company_name: Optional[str] = None
+    onboarding_completed: bool = False
+
+
+class UserProfileUpdate(BaseModel):
+    display_name: Optional[str] = None
+    company_name: Optional[str] = None
+    onboarding_completed: Optional[bool] = None
+
+
 # --- Generic ---
 
 class SuccessResponse(BaseModel):
