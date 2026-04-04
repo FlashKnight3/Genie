@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
     database_url: str = "sqlite+aiosqlite:///./genie.db"
-    claude_model: str = "claude-sonnet-4-6"
+    claude_model: str = "claude-haiku-4-5"
     # Max completion tokens per Anthropic call (lower = cheaper/shorter replies)
     claude_max_tokens: int = 2048
     # Tool outputs are stringified into the next user message; cap avoids huge prompts

@@ -12,7 +12,7 @@ Multi-agent AI system that manages subcontractors end-to-end, acting as an auton
 | **Risk** | Assesses weather, reliability, schedule conflicts; scores and logs risks |
 | **Rescheduling** | Recovers disrupted jobs — finds new slots or backup subcontractors |
 
-Each agent is powered by `claude-sonnet-4-6` with tool_use (function calling) and has a focused system prompt and curated tool set.
+Each agent is powered by `claude-haiku-4-5` with tool_use (function calling) and has a focused system prompt and curated tool set.
 
 ## Setup
 
@@ -86,7 +86,7 @@ POST /orchestrate
 ## Tech Stack
 
 - Python 3.11+ / asyncio
-- Anthropic SDK (`claude-sonnet-4-6`)
+- Anthropic SDK (`claude-haiku-4-5`)
 - FastAPI + Uvicorn
 - SQLAlchemy (async) + SQLite + aiosqlite
 - Pydantic v2
