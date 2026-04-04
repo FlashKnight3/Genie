@@ -27,9 +27,20 @@ cp .env.example .env
 # 3. Run the end-to-end demo
 python demo.py
 
-# 4. Start the API server
+# 4. Start the API server (also serves the web UI)
 python3 -m uvicorn main:app --reload
 ```
+
+## Frontend
+
+There is no separate frontend dev server. Static assets under `frontend/` are mounted by FastAPI at `/app`.
+
+With Uvicorn running on the default host and port:
+
+- **Web UI:** [http://localhost:8000/app/](http://localhost:8000/app/)
+- **API docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+
+The browser client uses `http://localhost:8000` as the API base URL (`frontend/js/api.js`). If you run the API on another host or port, update the `BASE` constant there (or add a small config) so requests still reach the backend.
 
 ## API
 
@@ -79,3 +90,4 @@ POST /orchestrate
 - FastAPI + Uvicorn
 - SQLAlchemy (async) + SQLite + aiosqlite
 - Pydantic v2
+- Frontend: vanilla ES modules + Tailwind (CDN), served as static files
