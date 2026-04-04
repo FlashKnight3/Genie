@@ -105,6 +105,24 @@ async def get_weather_forecast(
             lon = results[0]["longitude"]
             resolved_name = results[0].get("name", location)
 
+            # Open-Meteo free tier only supports up to 16 days in the future.
+            # Bound start_date and end_date to prevent 400 Bad Request errors.
+            from datetime import timedelta
+            now = datetime.utcnow()
+            max_date = (now + timedelta(days=14)).date()
+            try:
+                s_date_obj = datetime.fromisoformat(start_date).date()
+                if s_date_obj > max_date:
+                    start_date = max_date.isoformat()
+                
+                e_date_obj = datetime.fromisoformat(end).date()
+                if e_date_obj > max_date:
+                    end = max_date.isoformat()
+                if start_date > end:
+                    end = start_date
+            except ValueError:
+                pass
+
             # Step 2: fetch daily forecast
             wx_resp = await client.get(
                 "https://api.open-meteo.com/v1/forecast",
