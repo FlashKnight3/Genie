@@ -1,6 +1,7 @@
 """Quote builder — AI-drafted line-item quotes from job description."""
 import anthropic
 import json
+import re
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -50,21 +51,25 @@ async def draft_quote(body: QuoteRequest):
 
     resp = await client.messages.create(
         model=settings.claude_model,
-        max_tokens=1000,
+        max_tokens=4000,
         messages=[{"role": "user", "content": prompt}],
     )
 
     raw = resp.content[0].text.strip()
 
-    # Strip markdown code fences if present
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+    match = re.search(r"```(?:json)?\n?(.*?)\n?```", raw, re.DOTALL)
+    if match:
+        raw_json = match.group(1).strip()
+    else:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1:
+            raw_json = raw[start:end+1]
+        else:
+            raw_json = raw
 
     try:
-        quote = json.loads(raw)
+        quote = json.loads(raw_json)
     except json.JSONDecodeError:
         quote = {"raw": raw, "parse_error": "Could not parse as JSON — raw text returned"}
 

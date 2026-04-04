@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # Each specialist spawned via delegate_to_agent: max API round-trips
     max_specialist_iterations: int = 3
     # How many delegate_to_agent calls the PM may make in one orchestration (API/UI can override)
-    max_delegate_calls: int = 2
+    max_delegate_calls: int = 3
     # Upper bounds for request body overrides (API cannot exceed these)
     orchestrate_max_rounds_cap: int = 15
     orchestrate_max_delegate_cap: int = 8

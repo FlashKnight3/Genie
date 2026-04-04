@@ -80,7 +80,17 @@ export async function renderQuote(container) {
 
       const quote = data?.quote;
       if (!quote || quote.parse_error) {
-        resultEl.innerHTML = `<div class="card p-4 text-sm text-slate-300"><pre class="whitespace-pre-wrap">${quote?.raw || 'No output'}</pre></div>`;
+        resultEl.innerHTML = `
+          <div class="card p-6 border border-slate-700 text-center">
+            <div class="text-3xl mb-3 text-orange-400">⚠️</div>
+            <h3 class="text-lg font-bold text-slate-100 mb-2">Quote Generation Interrupted</h3>
+            <p class="text-sm text-slate-400 mb-4">The AI provider returned an incomplete or loosely formatted result. Please click "Generate" again to retry.</p>
+            <details class="text-xs text-slate-600 text-left">
+              <summary class="cursor-pointer mb-2 hover:text-slate-400 transition-colors">Show raw output</summary>
+              <pre class="bg-slate-900 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap text-slate-500">${quote?.raw || 'No output'}</pre>
+            </details>
+          </div>
+        `;
       } else {
         resultEl.innerHTML = renderQuoteCard(quote);
       }
