@@ -1,6 +1,6 @@
 """Pydantic request/response schemas for the API."""
 from typing import Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # --- Jobs ---
@@ -67,6 +67,27 @@ class SubcontractorResponse(BaseModel):
 class OrchestrateRequest(BaseModel):
     job_id: str
     task: Optional[str] = None  # defaults to "manage this job end-to-end"
+    # Optional caps (clamped server-side to orchestrate_*_cap in settings)
+    max_llm_rounds: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Max tool-use rounds for the project manager on this run",
+    )
+    max_specialist_agents: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Max delegate_to_agent (specialist) runs allowed this orchestration",
+    )
+    max_rounds_per_specialist: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Max tool-use rounds per specialist agent",
+    )
+
+    @field_validator("max_llm_rounds", "max_specialist_agents", "max_rounds_per_specialist", mode="before")
+    @classmethod
+    def empty_as_none(cls, v: Any) -> Any:
+        return None if v in ("", None) else v
 
 
 class OrchestrateResponse(BaseModel):

@@ -126,3 +126,17 @@ class AgentLog(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     job: Mapped[Optional["Job"]] = relationship("Job", back_populates="agent_logs")
+
+
+class Lead(Base):
+    __tablename__ = "leads"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[str] = mapped_column(String, nullable=False)
+    phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="new")  # new | responded | qualified | booked | lost
+    ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    auto_reply_sent: Mapped[bool] = mapped_column(default=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

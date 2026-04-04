@@ -6,7 +6,22 @@ from typing import Any, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from genie.config import settings
+
 logger = logging.getLogger(__name__)
+
+
+class DelegateBudget:
+    """Mutable budget for delegate_to_agent calls in one orchestration."""
+
+    def __init__(self, remaining: int) -> None:
+        self.remaining = max(0, remaining)
+
+    def try_consume(self) -> bool:
+        if self.remaining <= 0:
+            return False
+        self.remaining -= 1
+        return True
 
 # Maps agent name → set of tool names that agent has access to
 AGENT_TOOL_PERMISSIONS: dict[str, set[str]] = {
@@ -47,9 +62,20 @@ _ALIASES: dict[str, str] = {
 
 
 class ToolRegistry:
-    def __init__(self, db: AsyncSession, depth: int = 0) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        depth: int = 0,
+        *,
+        delegate_budget: DelegateBudget | None = None,
+        specialist_max_iterations: int | None = None,
+    ) -> None:
         self._db = db
         self._depth = depth
+        self._delegate_budget = delegate_budget if delegate_budget is not None else DelegateBudget(settings.max_delegate_calls)
+        self._specialist_max_iterations = (
+            settings.max_specialist_iterations if specialist_max_iterations is None else specialist_max_iterations
+        )
         self._tools: dict[str, Callable] = {}
         self._schemas: dict[str, dict] = {}
         self._register_all()
@@ -130,6 +156,8 @@ class ToolRegistry:
         child = ToolRegistry.__new__(ToolRegistry)
         child._db = self._db
         child._depth = depth
+        child._delegate_budget = self._delegate_budget
+        child._specialist_max_iterations = self._specialist_max_iterations
         child._tools = self._tools
         child._schemas = self._schemas
         return child

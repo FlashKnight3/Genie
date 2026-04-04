@@ -13,6 +13,8 @@ TOOL_DEFINITIONS = [
         "name": "delegate_to_agent",
         "description": (
             "Delegate a task to a specialist agent. "
+            "Each call consumes one run from a limited per-orchestration budget — "
+            "delegate only when necessary, one specialist at a time, with a focused task. "
             "Available agents: 'matching' (find/assign subcontractors), "
             "'communication' (send messages to subcontractors), "
             "'risk' (assess and log risks for a job), "
@@ -68,9 +70,22 @@ async def delegate_to_agent(
     if agent_name not in agent_map:
         return {"error": f"Unknown agent '{agent_name}'. Valid: {list(agent_map.keys())}"}
 
+    if not registry._delegate_budget.try_consume():
+        return {
+            "error": (
+                "Specialist run budget exhausted for this orchestration. "
+                "Finish with your own tools only (e.g. get_job, update_job_status, assign_subcontractor) "
+                "and summarize."
+            )
+        }
+
     agent_cls = agent_map[agent_name]
     # Create a child registry that prevents further delegation
     child_registry = registry.child_registry(_depth + 1)
     agent = agent_cls(db, child_registry)
-    result = await agent.run(task, context)
+    result = await agent.run(
+        task,
+        context,
+        max_iterations=registry._specialist_max_iterations,
+    )
     return {"agent": agent_name, "result": result.summary, "success": result.success}

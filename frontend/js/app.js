@@ -1,4 +1,5 @@
 import { api } from './api.js';
+import { initSupabase } from './supabase.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderJobs } from './views/jobs.js';
 import { renderJobDetail } from './views/job_detail.js';
@@ -6,6 +7,8 @@ import { renderSubcontractors } from './views/subcontractors.js';
 import { renderSchedule } from './views/schedule.js';
 import { renderRisks } from './views/risks.js';
 import { renderLogs } from './views/logs.js';
+import { renderLeads } from './views/leads.js';
+import { renderQuote } from './views/quote.js';
 
 const PAGE_TITLES = {
   dashboard: 'Dashboard',
@@ -14,6 +17,8 @@ const PAGE_TITLES = {
   schedule: 'Schedule',
   risks: 'Risks',
   logs: 'Agent Logs',
+  leads: 'Leads',
+  quote: 'Quote Builder',
 };
 
 function getRoute() {
@@ -49,6 +54,8 @@ async function route() {
       case 'schedule':        await renderSchedule(content); break;
       case 'risks':           await renderRisks(content); break;
       case 'logs':            await renderLogs(content); break;
+      case 'leads':           await renderLeads(content); break;
+      case 'quote':           await renderQuote(content); break;
       default:                await renderDashboard(content);
     }
   } catch (err) {
@@ -73,7 +80,9 @@ async function checkServerHealth() {
   }
 }
 
-export function initApp() {
+export async function initApp() {
+  await initSupabase();
+
   window.addEventListener('hashchange', route);
   checkServerHealth();
   setInterval(checkServerHealth, 15000);

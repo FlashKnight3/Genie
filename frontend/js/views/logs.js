@@ -1,7 +1,14 @@
 import { api } from '../api.js';
 import { agentChip, formatDateTime, timeAgo } from '../components.js';
+import { getSupabase, subscribePostgresInserts } from '../supabase.js';
+
+let logsRealtimeCleanup = null;
 
 export async function renderLogs(container) {
+  if (logsRealtimeCleanup) {
+    logsRealtimeCleanup();
+    logsRealtimeCleanup = null;
+  }
   container.innerHTML = `
     <div class="flex items-center justify-between mb-6">
       <div class="flex items-center gap-3">
@@ -106,4 +113,10 @@ export async function renderLogs(container) {
   document.getElementById('filter-limit').addEventListener('change', load);
 
   await load();
+
+  if (getSupabase()) {
+    logsRealtimeCleanup = subscribePostgresInserts('agent_logs', () => {
+      load();
+    });
+  }
 }

@@ -3,7 +3,18 @@ from sqlalchemy.orm import DeclarativeBase
 
 from genie.config import settings
 
-engine = create_async_engine(settings.database_url, echo=False)
+
+def _connect_args(url: str) -> dict:
+    if "supabase" in url.lower():
+        return {"ssl": True}
+    return {}
+
+
+engine = create_async_engine(
+    settings.database_url,
+    echo=False,
+    connect_args=_connect_args(settings.database_url),
+)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

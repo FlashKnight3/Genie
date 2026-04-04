@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from genie.db.models import Job, Subcontractor
+from genie.db.models import Job, Lead, Message, Schedule, Subcontractor
 
 
 SUBCONTRACTORS = [
@@ -97,6 +97,7 @@ async def seed_database(session: AsyncSession) -> None:
         )
         session.add(sub)
 
+    # Future jobs (pending)
     for i, data in enumerate(SAMPLE_JOBS):
         start = today + timedelta(days=3 + i * 2)
         end = start + timedelta(days=2)
@@ -108,5 +109,83 @@ async def seed_database(session: AsyncSession) -> None:
         )
         session.add(job)
 
+    # --- Demo: overdue in-progress jobs (the "money moment") ---
+    # Fetch first few subs to assign
+    from sqlalchemy import select as _select
+    sub_result = await session.execute(_select(Subcontractor).limit(4))
+    demo_subs = sub_result.scalars().all()
+
+    overdue_jobs = [
+        {
+            "title": "Drywall & Tape — Oakview Remodel",
+            "description": "Hang, tape, and finish drywall in master bedroom addition. 3 coats required.",
+            "required_skills": ["carpentry", "drywall"],
+            "location": "Austin, TX",
+            "status": "in_progress",
+            "budget": 2800.0,
+            "priority": "high",
+        },
+        {
+            "title": "Bathroom Tile Install — Riverside Condo",
+            "description": "Install floor and shower tile in primary bath, including waterproofing membrane.",
+            "required_skills": ["tiling", "waterproofing"],
+            "location": "Austin, TX",
+            "status": "in_progress",
+            "budget": 3400.0,
+            "priority": "medium",
+        },
+    ]
+
+    for i, data in enumerate(overdue_jobs):
+        sub = demo_subs[i] if i < len(demo_subs) else None
+        overdue_start = today - timedelta(days=7 + i * 2)
+        overdue_end = today - timedelta(days=2 + i)  # past due
+        job = Job(
+            id=str(uuid.uuid4()),
+            start_date=overdue_start.isoformat(),
+            end_date=overdue_end.isoformat(),
+            assigned_subcontractor_id=sub.id if sub else None,
+            **data,
+        )
+        session.add(job)
+
+        if sub:
+            # Add a schedule entry for this overdue job
+            sched = Schedule(
+                id=str(uuid.uuid4()),
+                job_id=job.id,
+                subcontractor_id=sub.id,
+                scheduled_start=overdue_start.isoformat() + "T08:00:00",
+                scheduled_end=overdue_end.isoformat() + "T17:00:00",
+                notes="Overdue — no check-in received.",
+            )
+            session.add(sched)
+
+            # Add a prior outbound message for context
+            msg = Message(
+                id=str(uuid.uuid4()),
+                job_id=job.id,
+                subcontractor_id=sub.id,
+                direction="outbound",
+                channel="sms",
+                subject=f"Assignment: {data['title']}",
+                body=f"Hi {sub.name}, you've been assigned to {data['title']}. Start date is {overdue_start.isoformat()}. Let me know if you have questions.",
+                status="delivered",
+            )
+            session.add(msg)
+
+    # --- Demo: a new lead that came in overnight ---
+    demo_lead = Lead(
+        id=str(uuid.uuid4()),
+        name="Rachel Torres",
+        email="rachel.t@gmail.com",
+        phone="512-555-0192",
+        message="Hi, I'm looking to renovate my kitchen — new cabinets, countertops, and tile backsplash. My house is in South Austin, about 180 sq ft kitchen. Would love to get a quote this week if possible. Budget is around $25k.",
+        status="new",
+        ai_summary="Homeowner seeking full kitchen renovation (cabinets, countertops, tile) in South Austin. ~180 sq ft, $25k budget. Interested in a quote this week — high-intent, time-sensitive lead.",
+        auto_reply_sent=False,
+    )
+    session.add(demo_lead)
+
     await session.commit()
-    print("✓ Database seeded with 20 subcontractors and 5 sample jobs.")
+    print("✓ Database seeded with 20 subs, 5 pending jobs, 2 overdue jobs, and 1 demo lead.")

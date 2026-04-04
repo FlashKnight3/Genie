@@ -1,11 +1,17 @@
 """Tools for sending and managing communications with subcontractors."""
+import base64
+import logging
 import uuid
 from datetime import datetime
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from genie.config import settings
 from genie.db.models import Message, Subcontractor
+
+logger = logging.getLogger(__name__)
 
 
 TOOL_DEFINITIONS = [
@@ -128,15 +134,34 @@ async def send_message(
     await db.commit()
     await db.refresh(msg)
 
-    # Simulate delivery confirmation
-    return {
+    # Attempt real delivery based on channel
+    delivery_status = "simulated"
+    delivery_error = None
+
+    if channel == "sms" and settings.twilio_account_sid and settings.twilio_auth_token:
+        try:
+            delivery_status = await _send_twilio_sms(sub.phone, body)
+        except Exception as exc:
+            delivery_error = str(exc)
+            logger.warning("Twilio SMS failed: %s", exc)
+    elif channel == "email" and settings.resend_api_key:
+        try:
+            delivery_status = await _send_resend_email(sub.email, subject, body)
+        except Exception as exc:
+            delivery_error = str(exc)
+            logger.warning("Resend email failed: %s", exc)
+
+    result: dict = {
         "success": True,
         "message_id": msg.id,
         "recipient": sub.name,
         "channel": channel,
         "subject": subject,
-        "delivery_status": "delivered",
+        "delivery_status": delivery_status,
     }
+    if delivery_error:
+        result["delivery_error"] = delivery_error
+    return result
 
 
 async def get_message_thread(db: AsyncSession, subcontractor_id: str, job_id: str | None = None) -> dict:
@@ -204,3 +229,51 @@ async def log_inbound_message(
     db.add(msg)
     await db.commit()
     return {"success": True, "message_id": msg.id, "from": name}
+
+
+# ---------------------------------------------------------------------------
+# Real delivery helpers
+# ---------------------------------------------------------------------------
+
+async def _send_twilio_sms(to_number: str, body: str) -> str:
+    """Send SMS via Twilio REST API. Returns delivery status string."""
+    credentials = base64.b64encode(
+        f"{settings.twilio_account_sid}:{settings.twilio_auth_token}".encode()
+    ).decode()
+
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{settings.twilio_account_sid}/Messages.json"
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            url,
+            headers={"Authorization": f"Basic {credentials}"},
+            data={
+                "From": settings.twilio_from_number,
+                "To": to_number,
+                "Body": body,
+            },
+        )
+    data = resp.json()
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(data.get("message", "Twilio error"))
+    return data.get("status", "queued")
+
+
+async def _send_resend_email(to_email: str, subject: str, body: str) -> str:
+    """Send email via Resend API. Returns delivery status string."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {settings.resend_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": settings.resend_from_email,
+                "to": [to_email],
+                "subject": subject,
+                "text": body,
+            },
+        )
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(resp.text)
+    return "sent"

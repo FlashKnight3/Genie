@@ -1,6 +1,27 @@
 import { api } from '../api.js';
 import { formatDate, formatDateTime, hideAgentOverlay, priorityBadge, ratingStars, severityBadge, showAgentOverlay, skillChips, statusBadge, toast } from '../components.js';
 
+const SPECIALIST_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+function buildOrchestrateLimits() {
+  const maxSpecEl = document.getElementById('run-max-specialists');
+  const raw = maxSpecEl ? parseInt(maxSpecEl.value, 10) : 1;
+  const max_specialist_agents = Number.isNaN(raw) ? 1 : raw;
+  const limits = { max_specialist_agents };
+
+  const pmEl = document.getElementById('run-pm-rounds');
+  const specEl = document.getElementById('run-spec-rounds');
+  if (pmEl?.value !== '' && pmEl?.value != null) {
+    const n = parseInt(pmEl.value, 10);
+    if (!Number.isNaN(n) && n >= 1) limits.max_llm_rounds = n;
+  }
+  if (specEl?.value !== '' && specEl?.value != null) {
+    const n = parseInt(specEl.value, 10);
+    if (!Number.isNaN(n) && n >= 1) limits.max_rounds_per_specialist = n;
+  }
+  return limits;
+}
+
 export async function renderJobDetail(container, jobId) {
   container.innerHTML = `<div class="animate-pulse space-y-4">
     <div class="h-8 bg-slate-800 rounded w-1/3"></div>
@@ -27,9 +48,36 @@ export async function renderJobDetail(container, jobId) {
         </div>
         <p class="text-slate-400 text-sm">${job.location} &nbsp;·&nbsp; $${job.budget.toLocaleString()} budget</p>
       </div>
-      <button id="run-agent-btn" class="btn-primary flex items-center gap-2 text-base px-6 py-3">
-        🤖 Run Agent
-      </button>
+      <div class="flex flex-col items-end gap-2 max-w-sm">
+        <div class="flex flex-wrap items-end justify-end gap-2">
+          <div class="flex flex-col items-end gap-0.5">
+            <label for="run-max-specialists" class="text-xs font-medium text-slate-400">Specialist agents</label>
+            <select id="run-max-specialists" class="input text-sm py-2 min-w-[10.5rem]" title="How many delegated specialist runs (matching, risk, etc.) the project manager may start">
+              ${SPECIALIST_OPTIONS.map(
+                (n) =>
+                  `<option value="${n}" ${n === 1 ? 'selected' : ''}>${n === 0 ? '0 — PM only' : n}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <button id="run-agent-btn" class="btn-primary flex items-center gap-2 text-base px-6 py-3">
+            🤖 Run Agent
+          </button>
+        </div>
+        <details class="text-xs text-slate-500 w-full">
+          <summary class="cursor-pointer text-slate-500 hover:text-slate-400 select-none text-right">Advanced — prompt rounds</summary>
+          <div class="mt-2 flex flex-wrap gap-3 justify-end items-end">
+            <div class="flex flex-col items-end gap-0.5">
+              <label for="run-pm-rounds" class="text-slate-500">PM max rounds</label>
+              <input id="run-pm-rounds" type="number" min="1" max="15" placeholder="server default" class="input text-sm py-1.5 w-28 text-right" title="Leave empty for server default" />
+            </div>
+            <div class="flex flex-col items-end gap-0.5">
+              <label for="run-spec-rounds" class="text-slate-500">Per specialist</label>
+              <input id="run-spec-rounds" type="number" min="1" max="15" placeholder="server default" class="input text-sm py-1.5 w-28 text-right" title="Leave empty for server default" />
+            </div>
+          </div>
+        </details>
+        <p class="text-xs text-slate-600 text-right leading-snug">Each specialist is a separate AI agent. Use <strong class="text-slate-400">0</strong> for project manager only (no delegation).</p>
+      </div>
     </div>
 
     <!-- Info grid -->
@@ -155,7 +203,8 @@ export async function renderJobDetail(container, jobId) {
     btn.disabled = true;
     const overlay = showAgentOverlay(job.title);
     try {
-      const result = await api.orchestrate.run(jobId);
+      const limits = buildOrchestrateLimits();
+      const result = await api.orchestrate.run(jobId, null, limits);
       hideAgentOverlay();
       toast(`✓ Agents completed — ${result?.tool_calls_count || 0} tool calls made`, 'success');
 

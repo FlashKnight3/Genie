@@ -4,11 +4,33 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from genie.api.schemas import OrchestrateRequest, OrchestrateResponse, SuccessResponse
+from genie.config import settings
 from genie.db.database import get_session
 from genie.db.models import AgentLog, Job
-from genie.tools.registry import ToolRegistry
+from genie.tools.registry import DelegateBudget, ToolRegistry
 
 router = APIRouter(prefix="/orchestrate", tags=["orchestrate"])
+
+
+def _resolve_orchestrate_limits(body: OrchestrateRequest) -> tuple[int, int, int]:
+    """Returns (pm_max_iterations, delegate_budget, specialist_max_iterations)."""
+    pm_cap = settings.orchestrate_max_rounds_cap
+    del_cap = settings.orchestrate_max_delegate_cap
+
+    pm_iters = settings.max_agent_iterations if body.max_llm_rounds is None else body.max_llm_rounds
+    pm_iters = max(1, min(pm_iters, pm_cap))
+
+    delegates = settings.max_delegate_calls if body.max_specialist_agents is None else body.max_specialist_agents
+    delegates = max(0, min(delegates, del_cap))
+
+    spec_iters = (
+        settings.max_specialist_iterations
+        if body.max_rounds_per_specialist is None
+        else body.max_rounds_per_specialist
+    )
+    spec_iters = max(1, min(spec_iters, pm_cap))
+
+    return pm_iters, delegates, spec_iters
 
 
 @router.post("", response_model=OrchestrateResponse)
@@ -21,10 +43,25 @@ async def orchestrate_job(body: OrchestrateRequest, db: AsyncSession = Depends(g
 
     from genie.agents.project_manager import ProjectManagerAgent
 
-    registry = ToolRegistry(db)
+    pm_iters, delegate_n, spec_iters = _resolve_orchestrate_limits(body)
+    registry = ToolRegistry(
+        db,
+        delegate_budget=DelegateBudget(delegate_n),
+        specialist_max_iterations=spec_iters,
+    )
     agent = ProjectManagerAgent(db, registry)
     task = body.task or f"Manage this job end-to-end: '{job.title}' (job_id: {body.job_id})"
-    agent_result = await agent.run(task, {"job_id": body.job_id})
+    if delegate_n == 0:
+        task += (
+            "\n\nOrchestration limits: Do not use delegate_to_agent — specialist delegations are disabled "
+            "for this run. Use only your own tools (get_job, update_job_status, assign_subcontractor, risks tools, etc.)."
+        )
+    else:
+        task += (
+            f"\n\nOrchestration limits: You may use delegate_to_agent at most {delegate_n} time(s) on this run "
+            f"(each call uses one slot). You have at most {pm_iters} tool-use rounds yourself — stay focused."
+        )
+    agent_result = await agent.run(task, {"job_id": body.job_id}, max_iterations=pm_iters)
 
     return OrchestrateResponse(
         job_id=body.job_id,

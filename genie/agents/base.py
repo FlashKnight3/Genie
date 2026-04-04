@@ -40,9 +40,22 @@ class BaseAgent(ABC):
     def system_prompt(self) -> str:
         """System prompt that defines this agent's role."""
 
-    async def run(self, task: str, context: dict | None = None) -> AgentResult:
-        """Run the agent on a task, looping until completion or max iterations."""
+    async def run(
+        self,
+        task: str,
+        context: dict | None = None,
+        *,
+        max_iterations: int | None = None,
+    ) -> AgentResult:
+        """Run the agent on a task.
+
+        Each *iteration* is one Anthropic `messages.create` call. If Claude returns
+        `tool_use`, tools run and their results are appended; the loop calls Claude again.
+        When Claude returns `end_turn` (no more tools), the loop stops — so actual
+        iterations are often fewer than the cap.
+        """
         context = context or {}
+        cap = settings.max_agent_iterations if max_iterations is None else max_iterations
         messages: list[dict[str, Any]] = [
             {"role": "user", "content": self._build_user_message(task, context)}
         ]
@@ -51,12 +64,12 @@ class BaseAgent(ABC):
         tool_calls_log: list[dict] = []
         final_text = ""
 
-        for iteration in range(settings.max_agent_iterations):
+        for iteration in range(cap):
             logger.info("[%s] Iteration %d — sending to Claude", self.agent_name, iteration + 1)
 
             response = await self.client.messages.create(
                 model=settings.claude_model,
-                max_tokens=4096,
+                max_tokens=settings.claude_max_tokens,
                 system=self.system_prompt,
                 tools=tool_schemas,  # type: ignore[arg-type]
                 messages=messages,
@@ -92,7 +105,7 @@ class BaseAgent(ABC):
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": str(result),
+                        "content": self._truncate_tool_result(result),
                     })
 
                 messages.append({"role": "user", "content": tool_results})
@@ -107,6 +120,13 @@ class BaseAgent(ABC):
             summary=final_text or f"{self.agent_name} completed task.",
             tool_calls_made=tool_calls_log,
         )
+
+    def _truncate_tool_result(self, result: Any) -> str:
+        text = str(result)
+        limit = settings.tool_result_max_chars
+        if len(text) <= limit:
+            return text
+        return text[: limit - 40] + "\n… [truncated — tool output exceeded limit]"
 
     def _build_user_message(self, task: str, context: dict) -> str:
         ctx_str = "\n".join(f"  {k}: {v}" for k, v in context.items()) if context else "  (none)"
