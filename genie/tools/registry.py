@@ -32,6 +32,10 @@ AGENT_TOOL_PERMISSIONS: dict[str, set[str]] = {
         "get_job",
         "update_job_status",
         "assign_subcontractor",
+        "get_schedule",
+        "create_schedule",
+        "update_schedule",
+        "find_available_slots",
         "delegate_to_agent",
     },
     # Finds best-fit sub and assigns them.
@@ -40,6 +44,9 @@ AGENT_TOOL_PERMISSIONS: dict[str, set[str]] = {
         "search_subcontractors",
         "detect_conflicts",
         "assign_subcontractor",
+        "get_schedule",
+        "find_available_slots",
+        "create_schedule",
     },
     # Sends one targeted message. That's it.
     "communication": {
@@ -63,7 +70,6 @@ AGENT_TOOL_PERMISSIONS: dict[str, set[str]] = {
         "update_schedule",
         "search_subcontractors",
         "assign_subcontractor",
-        "send_message",
         "update_job_status",
     },
 }

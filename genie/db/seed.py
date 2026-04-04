@@ -1,4 +1,11 @@
-"""Seed the database with realistic fake subcontractors and sample jobs."""
+"""Seed the database with demo subcontractors and sample jobs.
+
+Subcontractors are **app data** (SQLAlchemy), stored in whatever DATABASE_URL points to
+(local SQLite or Supabase Postgres). They are not Supabase Auth users — those are only
+people who log into the SPA (see UserProfile, which maps auth.sub → profile row).
+
+For integration testing, demo subs share one phone (SMS) and one email (Resend).
+"""
 import uuid
 from datetime import date, timedelta
 
@@ -6,28 +13,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from genie.db.models import Job, Lead, Message, Schedule, Subcontractor
 
+# All seeded subs use these for Twilio / Resend smoke tests (E.164 applied at send time).
+DEMO_CONTACT_PHONE = "408-722-1995"
+DEMO_CONTACT_EMAIL = "z.hensley.m@gmail.com"
 
 SUBCONTRACTORS = [
-    {"name": "Marcus Rivera", "email": "m.rivera@tradepro.com", "phone": "512-334-1021", "skills": ["electrical", "wiring", "panel upgrades"], "hourly_rate": 85.0, "location": "Austin, TX", "rating": 4.8, "completed_jobs": 142},
-    {"name": "Sarah Chen", "email": "s.chen@plumbperfect.com", "phone": "512-445-2233", "skills": ["plumbing", "pipe fitting", "water heaters"], "hourly_rate": 75.0, "location": "Austin, TX", "rating": 4.9, "completed_jobs": 198},
-    {"name": "Derek Johnson", "email": "d.johnson@jsconstruct.com", "phone": "512-556-3344", "skills": ["carpentry", "framing", "drywall"], "hourly_rate": 65.0, "location": "Round Rock, TX", "rating": 4.5, "completed_jobs": 87},
-    {"name": "Priya Patel", "email": "p.patel@greenscapes.com", "phone": "512-667-4455", "skills": ["landscaping", "irrigation", "hardscaping"], "hourly_rate": 55.0, "location": "Cedar Park, TX", "rating": 4.7, "completed_jobs": 223},
-    {"name": "Tom O'Brien", "email": "t.obrien@coolhvac.com", "phone": "737-112-5566", "skills": ["hvac", "refrigeration", "ductwork"], "hourly_rate": 95.0, "location": "Austin, TX", "rating": 4.6, "completed_jobs": 115},
-    {"name": "Lisa Nguyen", "email": "l.nguyen@painterplus.com", "phone": "512-778-6677", "skills": ["painting", "drywall", "finishing"], "hourly_rate": 50.0, "location": "Pflugerville, TX", "rating": 4.3, "completed_jobs": 64},
-    {"name": "Carlos Mendez", "email": "c.mendez@tilemaster.com", "phone": "512-889-7788", "skills": ["tiling", "flooring", "waterproofing"], "hourly_rate": 70.0, "location": "Austin, TX", "rating": 4.7, "completed_jobs": 176},
-    {"name": "James Park", "email": "j.park@roofright.com", "phone": "512-990-8899", "skills": ["roofing", "gutters", "waterproofing"], "hourly_rate": 80.0, "location": "Georgetown, TX", "rating": 4.4, "completed_jobs": 93},
-    {"name": "Angela Torres", "email": "a.torres@eliteclean.com", "phone": "512-001-9900", "skills": ["cleaning", "pressure washing", "window cleaning"], "hourly_rate": 40.0, "location": "Austin, TX", "rating": 4.9, "completed_jobs": 312},
-    {"name": "Kevin Wallace", "email": "k.wallace@concretemasters.com", "phone": "512-112-0011", "skills": ["concrete", "foundations", "stamped concrete"], "hourly_rate": 90.0, "location": "Leander, TX", "rating": 4.5, "completed_jobs": 108},
-    {"name": "Sandra Mitchell", "email": "s.mitchell@sparkelec.com", "phone": "737-223-1122", "skills": ["electrical", "smart home", "solar"], "hourly_rate": 110.0, "location": "Austin, TX", "rating": 4.8, "completed_jobs": 79},
-    {"name": "Robert Garcia", "email": "r.garcia@pipedreams.com", "phone": "512-334-2233", "skills": ["plumbing", "drain cleaning", "bathroom remodel"], "hourly_rate": 80.0, "location": "Austin, TX", "rating": 4.2, "completed_jobs": 55},
-    {"name": "Michelle Kim", "email": "m.kim@designbuild.com", "phone": "512-445-3344", "skills": ["carpentry", "cabinetry", "custom millwork"], "hourly_rate": 95.0, "location": "Austin, TX", "rating": 4.9, "completed_jobs": 203},
-    {"name": "David Brown", "email": "d.brown@lawnpros.com", "phone": "512-556-4455", "skills": ["landscaping", "tree trimming", "lawn care"], "hourly_rate": 45.0, "location": "Kyle, TX", "rating": 4.1, "completed_jobs": 287},
-    {"name": "Jennifer Scott", "email": "j.scott@climatecntrl.com", "phone": "512-667-5566", "skills": ["hvac", "mini-split", "air quality"], "hourly_rate": 100.0, "location": "Buda, TX", "rating": 4.7, "completed_jobs": 134},
-    {"name": "Anthony Lewis", "email": "a.lewis@flashpaint.com", "phone": "512-778-6677", "skills": ["painting", "stucco", "exterior coatings"], "hourly_rate": 55.0, "location": "Austin, TX", "rating": 4.4, "completed_jobs": 91},
-    {"name": "Patricia White", "email": "p.white@tileguru.com", "phone": "512-889-7788", "skills": ["tiling", "mosaic", "bathroom remodel"], "hourly_rate": 75.0, "location": "Round Rock, TX", "rating": 4.6, "completed_jobs": 147},
-    {"name": "Daniel Harris", "email": "d.harris@dryroof.com", "phone": "512-990-8899", "skills": ["roofing", "shingles", "flat roof"], "hourly_rate": 75.0, "location": "Austin, TX", "rating": 4.3, "completed_jobs": 68},
-    {"name": "Nancy Clark", "email": "n.clark@sparklewindows.com", "phone": "737-001-9900", "skills": ["cleaning", "janitorial", "post-construction cleanup"], "hourly_rate": 38.0, "location": "Austin, TX", "rating": 4.8, "completed_jobs": 421},
-    {"name": "Brian Martinez", "email": "b.martinez@steelframe.com", "phone": "512-112-0011", "skills": ["concrete", "steel framing", "structural"], "hourly_rate": 105.0, "location": "Austin, TX", "rating": 4.6, "completed_jobs": 62},
+    {"name": "Marcus Rivera", "email": DEMO_CONTACT_EMAIL, "phone": DEMO_CONTACT_PHONE, "skills": ["electrical", "wiring", "panel upgrades"], "hourly_rate": 85.0, "location": "San Jose, CA", "rating": 4.8, "completed_jobs": 142},
+    {"name": "Sarah Chen", "email": DEMO_CONTACT_EMAIL, "phone": DEMO_CONTACT_PHONE, "skills": ["plumbing", "pipe fitting", "water heaters"], "hourly_rate": 75.0, "location": "San Jose, CA", "rating": 4.9, "completed_jobs": 198},
+    {"name": "Derek Johnson", "email": DEMO_CONTACT_EMAIL, "phone": DEMO_CONTACT_PHONE, "skills": ["carpentry", "framing", "drywall"], "hourly_rate": 65.0, "location": "Santa Clara, CA", "rating": 4.5, "completed_jobs": 87},
+    {"name": "Priya Patel", "email": DEMO_CONTACT_EMAIL, "phone": DEMO_CONTACT_PHONE, "skills": ["landscaping", "irrigation", "hardscaping"], "hourly_rate": 55.0, "location": "Cupertino, CA", "rating": 4.7, "completed_jobs": 223},
+    {"name": "Tom O'Brien", "email": DEMO_CONTACT_EMAIL, "phone": DEMO_CONTACT_PHONE, "skills": ["hvac", "refrigeration", "ductwork"], "hourly_rate": 95.0, "location": "San Jose, CA", "rating": 4.6, "completed_jobs": 115},
+    {"name": "Lisa Nguyen", "email": DEMO_CONTACT_EMAIL, "phone": DEMO_CONTACT_PHONE, "skills": ["painting", "drywall", "finishing"], "hourly_rate": 50.0, "location": "Sunnyvale, CA", "rating": 4.3, "completed_jobs": 64},
+    {"name": "Carlos Mendez", "email": DEMO_CONTACT_EMAIL, "phone": DEMO_CONTACT_PHONE, "skills": ["tiling", "flooring", "waterproofing"], "hourly_rate": 70.0, "location": "San Jose, CA", "rating": 4.7, "completed_jobs": 176},
+    {"name": "James Park", "email": DEMO_CONTACT_EMAIL, "phone": DEMO_CONTACT_PHONE, "skills": ["roofing", "gutters", "waterproofing"], "hourly_rate": 80.0, "location": "Mountain View, CA", "rating": 4.4, "completed_jobs": 93},
 ]
 
 SAMPLE_JOBS = [
@@ -35,7 +33,7 @@ SAMPLE_JOBS = [
         "title": "Electrical Panel Upgrade — Westlake Home",
         "description": "Upgrade 100A panel to 200A, add 4 new circuits for EV charger and kitchen remodel. Home built in 1985.",
         "required_skills": ["electrical", "panel upgrades"],
-        "location": "Austin, TX",
+        "location": "San Jose, CA",
         "status": "pending",
         "budget": 3200.0,
         "priority": "high",
@@ -44,7 +42,7 @@ SAMPLE_JOBS = [
         "title": "Master Bath Plumbing Rough-In",
         "description": "Rough-in plumbing for new master bathroom addition. Includes 2 sinks, walk-in shower, soaking tub, and toilet.",
         "required_skills": ["plumbing", "bathroom remodel"],
-        "location": "Austin, TX",
+        "location": "San Jose, CA",
         "status": "pending",
         "budget": 4500.0,
         "priority": "medium",
@@ -53,7 +51,7 @@ SAMPLE_JOBS = [
         "title": "Commercial Landscaping — Office Park",
         "description": "Install new irrigation system and hardscaping for 2-acre commercial property. Deadline is end of month.",
         "required_skills": ["landscaping", "irrigation", "hardscaping"],
-        "location": "Cedar Park, TX",
+        "location": "Cupertino, CA",
         "status": "pending",
         "budget": 12000.0,
         "priority": "high",
@@ -62,7 +60,7 @@ SAMPLE_JOBS = [
         "title": "HVAC System Replacement",
         "description": "Replace aging 5-ton HVAC system with new high-efficiency unit. Includes ductwork inspection and sealing.",
         "required_skills": ["hvac", "ductwork"],
-        "location": "Austin, TX",
+        "location": "San Jose, CA",
         "status": "pending",
         "budget": 8500.0,
         "priority": "critical",
@@ -71,7 +69,7 @@ SAMPLE_JOBS = [
         "title": "Interior Painting — 3BR Rental Property",
         "description": "Full interior repaint of 3-bedroom rental unit between tenants. Ceilings, walls, trim. Needs to be done within 5 days.",
         "required_skills": ["painting", "finishing"],
-        "location": "Pflugerville, TX",
+        "location": "Sunnyvale, CA",
         "status": "pending",
         "budget": 2200.0,
         "priority": "medium",
@@ -110,7 +108,6 @@ async def seed_database(session: AsyncSession) -> None:
         session.add(job)
 
     # --- Demo: overdue in-progress jobs (the "money moment") ---
-    # Fetch first few subs to assign
     from sqlalchemy import select as _select
     sub_result = await session.execute(_select(Subcontractor).limit(4))
     demo_subs = sub_result.scalars().all()
@@ -120,7 +117,7 @@ async def seed_database(session: AsyncSession) -> None:
             "title": "Drywall & Tape — Oakview Remodel",
             "description": "Hang, tape, and finish drywall in master bedroom addition. 3 coats required.",
             "required_skills": ["carpentry", "drywall"],
-            "location": "Austin, TX",
+            "location": "San Jose, CA",
             "status": "in_progress",
             "budget": 2800.0,
             "priority": "high",
@@ -129,7 +126,7 @@ async def seed_database(session: AsyncSession) -> None:
             "title": "Bathroom Tile Install — Riverside Condo",
             "description": "Install floor and shower tile in primary bath, including waterproofing membrane.",
             "required_skills": ["tiling", "waterproofing"],
-            "location": "Austin, TX",
+            "location": "San Jose, CA",
             "status": "in_progress",
             "budget": 3400.0,
             "priority": "medium",
@@ -150,7 +147,6 @@ async def seed_database(session: AsyncSession) -> None:
         session.add(job)
 
         if sub:
-            # Add a schedule entry for this overdue job
             sched = Schedule(
                 id=str(uuid.uuid4()),
                 job_id=job.id,
@@ -161,7 +157,6 @@ async def seed_database(session: AsyncSession) -> None:
             )
             session.add(sched)
 
-            # Add a prior outbound message for context
             msg = Message(
                 id=str(uuid.uuid4()),
                 job_id=job.id,
@@ -174,18 +169,18 @@ async def seed_database(session: AsyncSession) -> None:
             )
             session.add(msg)
 
-    # --- Demo: a new lead that came in overnight ---
     demo_lead = Lead(
         id=str(uuid.uuid4()),
-        name="Rachel Torres",
-        email="rachel.t@gmail.com",
-        phone="512-555-0192",
-        message="Hi, I'm looking to renovate my kitchen — new cabinets, countertops, and tile backsplash. My house is in South Austin, about 180 sq ft kitchen. Would love to get a quote this week if possible. Budget is around $25k.",
+        name="Demo Lead",
+        email=DEMO_CONTACT_EMAIL,
+        phone=DEMO_CONTACT_PHONE,
+        message="Hi, I'm looking to renovate my kitchen — new cabinets, countertops, and tile backsplash. Would love to get a quote this week if possible.",
         status="new",
-        ai_summary="Homeowner seeking full kitchen renovation (cabinets, countertops, tile) in South Austin. ~180 sq ft, $25k budget. Interested in a quote this week — high-intent, time-sensitive lead.",
+        ai_summary="Homeowner seeking kitchen renovation — quote requested this week.",
         auto_reply_sent=False,
     )
     session.add(demo_lead)
 
     await session.commit()
-    print("✓ Database seeded with 20 subs, 5 pending jobs, 2 overdue jobs, and 1 demo lead.")
+    n = len(SUBCONTRACTORS)
+    print(f"✓ Database seeded with {n} subs, 5 pending jobs, 2 overdue jobs, and 1 demo lead.")

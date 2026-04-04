@@ -91,10 +91,10 @@ async def send_delay_followup(job_id: str, db: AsyncSession = Depends(get_sessio
     draft_sms = await _draft_followup(client, job, sub, days_overdue)
 
     # Log the message and attempt real delivery
-    from genie.tools.communication_tools import _send_twilio_sms
+    from genie.tools.communication_tools import _send_twilio_sms, twilio_sms_configured
 
     delivery_status = "logged"
-    if settings.twilio_account_sid and settings.twilio_auth_token and sub.phone:
+    if twilio_sms_configured() and sub.phone:
         try:
             delivery_status = await _send_twilio_sms(sub.phone, draft_sms)
         except Exception as exc:

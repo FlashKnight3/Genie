@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from genie.api.schemas import SuccessResponse
 from genie.config import settings
 from genie.db.database import get_session
-from genie.db.models import Lead
+from genie.db.models import Job, Lead
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -34,6 +34,17 @@ async def submit_lead(body: LeadIn, db: AsyncSession = Depends(get_session)):
         status="new",
     )
     db.add(lead)
+
+    job = Job(
+        title=f"Inquiry from {body.name}",
+        description=body.message,
+        location="TBD",
+        budget=0.0,
+        status="pending",
+        priority="medium"
+    )
+    db.add(job)
+
     await db.commit()
     await db.refresh(lead)
 
@@ -50,7 +61,7 @@ async def submit_lead(body: LeadIn, db: AsyncSession = Depends(get_session)):
 
     # Send the auto-reply email if Resend is configured
     delivery_status = "logged"
-    if settings.resend_api_key:
+    if settings.resend_api_key.strip():
         from genie.tools.communication_tools import _send_resend_email
         try:
             await _send_resend_email(

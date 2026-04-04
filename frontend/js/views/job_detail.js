@@ -6,7 +6,7 @@ const SPECIALIST_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 function buildOrchestrateLimits() {
   const maxSpecEl = document.getElementById('run-max-specialists');
   const raw = maxSpecEl ? parseInt(maxSpecEl.value, 10) : 1;
-  const max_specialist_agents = Number.isNaN(raw) ? 1 : raw;
+  const max_specialist_agents = Number.isNaN(raw) ? 3 : raw;
   const limits = { max_specialist_agents };
 
   const pmEl = document.getElementById('run-pm-rounds');
@@ -55,7 +55,7 @@ export async function renderJobDetail(container, jobId) {
             <select id="run-max-specialists" class="input text-sm py-2 min-w-[10.5rem]" title="How many delegated specialist runs (matching, risk, etc.) the project manager may start">
               ${SPECIALIST_OPTIONS.map(
                 (n) =>
-                  `<option value="${n}" ${n === 1 ? 'selected' : ''}>${n === 0 ? '0 — PM only' : n}</option>`
+                  `<option value="${n}" ${n === 3 ? 'selected' : ''}>${n === 0 ? '0 — PM only' : n}</option>`
               ).join('')}
             </select>
           </div>

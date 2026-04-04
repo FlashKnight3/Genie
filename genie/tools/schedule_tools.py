@@ -208,3 +208,55 @@ async def get_full_schedule(db: AsyncSession) -> dict:
     result = await db.execute(select(Schedule))
     schedules = result.scalars().all()
     return {"schedules": [_sched_to_dict(s) for s in schedules], "count": len(schedules)}
+
+
+async def ensure_schedule_for_assigned_job(db: AsyncSession, job_id: str) -> dict:
+    """If the job has an assignee but no schedule rows, create one (slot search or default workday).
+
+    Covers cases where the matching agent hits iteration limits before create_schedule.
+    """
+    from genie.db.models import Job
+
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job or not job.assigned_subcontractor_id:
+        return {"skipped": True, "reason": "no_assignee"}
+
+    existing = await get_schedule(db, job_id=job_id)
+    if existing["count"]:
+        return {"skipped": True, "reason": "already_scheduled"}
+
+    sub_id = job.assigned_subcontractor_id
+    today = datetime.utcnow().date().isoformat()
+    start_d = (job.start_date or today).strip()
+    end_d = (job.end_date or start_d).strip()
+    try:
+        if end_d < start_d:
+            end_d = (datetime.fromisoformat(start_d) + timedelta(days=14)).date().isoformat()
+    except ValueError:
+        end_d = start_d
+
+    slots = await find_available_slots(db, sub_id, 8.0, start_d, end_d)
+    if slots.get("count"):
+        first = slots["available_slots"][0]
+        created = await create_schedule(
+            db,
+            job_id=job_id,
+            subcontractor_id=sub_id,
+            scheduled_start=first["start"],
+            scheduled_end=first["end"],
+            notes="Kickoff / site window (filled in after agent run)",
+        )
+        return {"created": True, "schedule_id": created.get("id")}
+
+    day_start = f"{start_d}T08:00:00"
+    day_end = f"{start_d}T17:00:00"
+    created = await create_schedule(
+        db,
+        job_id=job_id,
+        subcontractor_id=sub_id,
+        scheduled_start=day_start,
+        scheduled_end=day_end,
+        notes="Kickoff / site window (default workday)",
+    )
+    return {"created": True, "schedule_id": created.get("id"), "via": "default_workday"}

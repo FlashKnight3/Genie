@@ -7,7 +7,11 @@ from fastapi.staticfiles import StaticFiles
 
 from genie.auth import get_current_user
 from genie.config import settings
+from sqlalchemy import text
+
+from genie.tools.communication_tools import twilio_sms_configured
 from genie.db.database import AsyncSessionLocal
+from genie.db.database import engine
 from genie.db.database import init_db
 from genie.db.seed import seed_database
 
@@ -32,6 +36,10 @@ async def startup_event():
     if settings.require_auth and not settings.supabase_jwt_secret.strip():
         logging.getLogger(__name__).warning(
             "REQUIRE_AUTH is true but SUPABASE_JWT_SECRET is empty — API will return 503 for protected routes."
+        )
+    if settings.twilio_account_sid.strip() and settings.twilio_auth_token.strip() and not twilio_sms_configured():
+        logging.getLogger(__name__).warning(
+            "Twilio account credentials are set but TWILIO_FROM_NUMBER and TWILIO_MESSAGING_SERVICE_SID are both empty — SMS will stay simulated until you set one."
         )
     await init_db()
     async with AsyncSessionLocal() as session:
@@ -71,6 +79,28 @@ async def health():
     return {"status": "healthy"}
 
 
+@app.get("/health/integrations", tags=["health"])
+async def health_integrations():
+    """Non-secret flags + DB ping for Resend, Twilio, Supabase, and Anthropic."""
+    db_ok = False
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        pass
+    return {
+        "database_reachable": db_ok,
+        "database_url_uses_supabase_pooler": "supabase" in settings.database_url.lower(),
+        "anthropic_configured": bool(settings.anthropic_api_key.strip()),
+        "resend_configured": bool(settings.resend_api_key.strip()),
+        "twilio_sms_ready": twilio_sms_configured(),
+        "supabase_url_configured": bool(settings.supabase_url.strip()),
+        "supabase_anon_key_configured": bool(settings.supabase_anon_key.strip()),
+        "supabase_jwt_secret_configured": bool(settings.supabase_jwt_secret.strip()),
+    }
+
+
 def _oauth_provider_list() -> list[str]:
     raw = settings.supabase_oauth_providers.strip()
     if not raw:
@@ -88,6 +118,7 @@ async def public_config():
         "auth_required": settings.require_auth,
         "oauth_providers": _oauth_provider_list(),
         "sso_domain": settings.supabase_sso_domain.strip() or None,
+        "sms_enabled": twilio_sms_configured(),
     }
 
 
