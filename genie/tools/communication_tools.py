@@ -132,6 +132,7 @@ async def send_message(
     subject: str,
     body: str,
     job_id: str | None = None,
+    attachments: list[dict] | None = None,
 ) -> dict:
     # Verify subcontractor exists
     result = await db.execute(select(Subcontractor).where(Subcontractor.id == subcontractor_id))
@@ -165,7 +166,7 @@ async def send_message(
             logger.warning("Twilio SMS failed: %s", exc)
     elif channel == "email" and settings.resend_api_key.strip():
         try:
-            delivery_status = await _send_resend_email(sub.email, subject, body)
+            delivery_status = await _send_resend_email(sub.email, subject, body, attachments=attachments)
         except Exception as exc:
             delivery_error = str(exc)
             logger.warning("Resend email failed: %s", exc)
@@ -311,7 +312,7 @@ def _plain_to_html_email(body: str) -> str:
     return inner
 
 
-async def _send_resend_email(to_email: str, subject: str, body: str) -> str:
+async def _send_resend_email(to_email: str, subject: str, body: str, attachments: list[dict] | None = None) -> str:
     """Send email via Resend HTTP API using RESEND_API_KEY and RESEND_FROM_EMAIL from .env."""
     key = settings.resend_api_key.strip()
     if not key:
@@ -325,6 +326,9 @@ async def _send_resend_email(to_email: str, subject: str, body: str) -> str:
         "text": body,
         "html": _plain_to_html_email(body),
     }
+    if attachments:
+        payload["attachments"] = attachments
+
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             "https://api.resend.com/emails",

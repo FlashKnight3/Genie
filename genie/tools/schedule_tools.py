@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from genie.db.models import Schedule
+from genie.db.models import Schedule, Job, Subcontractor
 
 
 TOOL_DEFINITIONS = [
@@ -91,6 +91,54 @@ def _sched_to_dict(s: Schedule) -> dict:
         "notes": s.notes,
     }
 
+async def _send_calendar_invite(db: AsyncSession, sched: Schedule, job: Job, sub: Subcontractor, is_update: bool = False):
+    import base64
+    from genie.tools.communication_tools import send_message
+
+    def _format_ics_date(dt_str: str) -> str:
+        tmp = dt_str.replace("-", "").replace(":", "")
+        if "." in tmp:
+            tmp = tmp.split(".")[0]
+        if "+" in tmp:
+            tmp = tmp.split("+")[0]
+        return tmp
+
+    start_ics = _format_ics_date(sched.scheduled_start)
+    end_ics = _format_ics_date(sched.scheduled_end)
+    dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    
+    ics_body = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Genie//Subcontractor Schedule//EN",
+        "METHOD:REQUEST",
+        "BEGIN:VEVENT",
+        f"UID:genie-job-{job.id}-{sched.id}",
+        f"DTSTAMP:{dtstamp}",
+        f"DTSTART:{start_ics}",
+        f"DTEND:{end_ics}",
+        f"SUMMARY:{job.title}",
+        f"DESCRIPTION:Job Location: {job.location}\\n\\nNotes: {sched.notes or ''}",
+        f"LOCATION:{job.location}",
+        "STATUS:CONFIRMED",
+        "END:VEVENT",
+        "END:VCALENDAR"
+    ]
+    ics_str = "\\r\\n".join(ics_body)
+    b64_content = base64.b64encode(ics_str.encode("utf-8")).decode("utf-8")
+    
+    subject = f"Schedule Update: {job.title}" if is_update else f"Calendar Invite: {job.title}"
+    body = "Please see the attached calendar invite for the job."
+    
+    await send_message(
+        db=db,
+        subcontractor_id=sub.id,
+        channel="email",
+        subject=subject,
+        body=body,
+        job_id=job.id,
+        attachments=[{"filename": "invite.ics", "content": b64_content}],
+    )
 
 async def get_schedule(db: AsyncSession, job_id: str) -> dict:
     result = await db.execute(select(Schedule).where(Schedule.job_id == job_id))
@@ -117,6 +165,19 @@ async def create_schedule(
     db.add(sched)
     await db.commit()
     await db.refresh(sched)
+
+    # Fetch Job and Subcontractor to send invite
+    job_res = await db.execute(select(Job).where(Job.id == job_id))
+    job = job_res.scalar_one_or_none()
+    sub_res = await db.execute(select(Subcontractor).where(Subcontractor.id == subcontractor_id))
+    sub = sub_res.scalar_one_or_none()
+
+    if job and sub:
+        try:
+            await _send_calendar_invite(db, sched, job, sub, is_update=False)
+        except Exception:
+            pass
+
     return _sched_to_dict(sched)
 
 
@@ -138,6 +199,18 @@ async def update_schedule(
     if notes:
         sched.notes = notes
     await db.commit()
+
+    job_res = await db.execute(select(Job).where(Job.id == sched.job_id))
+    job = job_res.scalar_one_or_none()
+    sub_res = await db.execute(select(Subcontractor).where(Subcontractor.id == sched.subcontractor_id))
+    sub = sub_res.scalar_one_or_none()
+
+    if job and sub:
+        try:
+            await _send_calendar_invite(db, sched, job, sub, is_update=True)
+        except Exception:
+            pass
+
     return {"success": True, **_sched_to_dict(sched)}
 
 
