@@ -3,6 +3,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from genie.config import settings
 from genie.db.database import init_db
@@ -50,3 +51,7 @@ async def root():
 @app.get("/health", tags=["health"])
 async def health():
     return {"status": "healthy"}
+
+
+# Serve frontend SPA at /app
+app.mount("/app", StaticFiles(directory="frontend", html=True), name="frontend")
