@@ -58,6 +58,7 @@ async def send_message(
     subject: str,
     body: str,
     job_id: str | None = None,
+    attachments: list[dict] | None = None,
 ) -> dict:
     # Verify subcontractor exists
     result = await db.execute(select(Subcontractor).where(Subcontractor.id == subcontractor_id))
@@ -91,7 +92,7 @@ async def send_message(
             logger.warning("Twilio SMS failed: %s", exc)
     elif channel == "email" and settings.resend_api_key:
         try:
-            delivery_status = await _send_resend_email(sub.email, subject, body)
+            delivery_status = await _send_resend_email(sub.email, subject, body, attachments=attachments)
         except Exception as exc:
             delivery_error = str(exc)
             logger.warning("Resend email failed: %s", exc)
@@ -203,8 +204,17 @@ async def _send_twilio_sms(to_number: str, body: str) -> str:
     return data.get("status", "queued")
 
 
-async def _send_resend_email(to_email: str, subject: str, body: str) -> str:
+async def _send_resend_email(to_email: str, subject: str, body: str, attachments: list[dict] | None = None) -> str:
     """Send email via Resend API. Returns delivery status string."""
+    payload = {
+        "from": settings.resend_from_email,
+        "to": [to_email],
+        "subject": subject,
+        "text": body,
+    }
+    if attachments:
+        payload["attachments"] = attachments
+
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             "https://api.resend.com/emails",
@@ -212,12 +222,7 @@ async def _send_resend_email(to_email: str, subject: str, body: str) -> str:
                 "Authorization": f"Bearer {settings.resend_api_key}",
                 "Content-Type": "application/json",
             },
-            json={
-                "from": settings.resend_from_email,
-                "to": [to_email],
-                "subject": subject,
-                "text": body,
-            },
+            json=payload,
         )
     if resp.status_code not in (200, 201):
         raise RuntimeError(resp.text)
