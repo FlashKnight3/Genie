@@ -72,6 +72,14 @@ AGENT_TOOL_PERMISSIONS: dict[str, set[str]] = {
         "assign_subcontractor",
         "update_job_status",
     },
+    # Read-only predictor — no state mutations.
+    "predictor": {
+        "get_job",
+        "get_weather_forecast",
+        "calculate_risk_score",
+        "get_active_risks",
+        "get_schedule",
+    },
 }
 
 _ALIASES: dict[str, str] = {}

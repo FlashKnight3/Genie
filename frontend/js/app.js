@@ -16,9 +16,10 @@ import { renderRisks } from './views/risks.js';
 import { renderLogs } from './views/logs.js';
 import { renderLeads } from './views/leads.js';
 import { renderQuote } from './views/quote.js';
+import { renderKanban } from './views/kanban.js';
 
 const PAGE_TITLES = {
-  dashboard: 'Dashboard',
+  dashboard: 'Mission Control',
   jobs: 'Jobs',
   subcontractors: 'Subcontractors',
   schedule: 'Schedule',
@@ -26,6 +27,7 @@ const PAGE_TITLES = {
   logs: 'Agent Logs',
   leads: 'Leads',
   quote: 'Quote Builder',
+  kanban: 'Kanban Board',
 };
 
 function escapeHtml(s) {
@@ -167,6 +169,9 @@ async function route() {
         break;
       case 'quote':
         await renderQuote(content);
+        break;
+      case 'kanban':
+        await renderKanban(content);
         break;
       default:
         await renderDashboard(content);

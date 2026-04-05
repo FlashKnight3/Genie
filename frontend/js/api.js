@@ -82,9 +82,19 @@ export const api = {
     draft: (body) => apiFetch('/quote', { method: 'POST', body: JSON.stringify(body) }),
   },
 
+  wishes: {
+    make: (wish) => apiFetch('/wishes', { method: 'POST', body: JSON.stringify({ wish }) }),
+  },
+
+  predict: {
+    run: (jobId) => apiFetch(`/predict/${jobId}`, { method: 'POST' }),
+  },
+
   profile: {
     get: () => apiFetch('/api/profile'),
     update: (body) =>
       apiFetch('/api/profile', { method: 'PATCH', body: JSON.stringify(body) }),
   },
+
+  getBaseUrl: () => BASE,
 };

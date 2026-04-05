@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -46,6 +47,7 @@ class BaseAgent(ABC):
         context: dict | None = None,
         *,
         max_iterations: int | None = None,
+        event_callback: Callable | None = None,
     ) -> AgentResult:
         """Run the agent on a task.
 
@@ -64,6 +66,12 @@ class BaseAgent(ABC):
         tool_calls_log: list[dict] = []
         final_text = ""
 
+        async def _emit(event: dict) -> None:
+            if event_callback is not None:
+                await event_callback(event)
+
+        await _emit({"type": "agent_start", "agent": self.agent_name, "task": task[:120]})
+
         for iteration in range(cap):
             logger.info("[%s] Iteration %d — sending to Claude", self.agent_name, iteration + 1)
 
@@ -79,6 +87,7 @@ class BaseAgent(ABC):
             text_blocks = [b.text for b in response.content if b.type == "text"]
             if text_blocks:
                 final_text = "\n".join(text_blocks)
+                await _emit({"type": "thinking", "agent": self.agent_name, "text": final_text[:200]})
 
             # If Claude is done, break
             if response.stop_reason == "end_turn":
@@ -99,8 +108,13 @@ class BaseAgent(ABC):
                     tool_input = block.input
                     logger.info("[%s] Calling tool: %s(%s)", self.agent_name, tool_name, list(tool_input.keys()))
 
+                    await _emit({"type": "tool_call", "agent": self.agent_name, "tool": tool_name, "input_keys": list(tool_input.keys())})
+
                     result = await self.registry.call(tool_name, tool_input)
                     tool_calls_log.append({"tool": tool_name, "input": tool_input, "result": result})
+
+                    result_summary = str(result)[:120]
+                    await _emit({"type": "tool_result", "agent": self.agent_name, "tool": tool_name, "summary": result_summary})
 
                     tool_results.append({
                         "type": "tool_result",
@@ -112,6 +126,8 @@ class BaseAgent(ABC):
             else:
                 # Unexpected stop reason
                 break
+
+        await _emit({"type": "agent_done", "agent": self.agent_name, "summary": (final_text or f"{self.agent_name} completed.")[:200]})
 
         await self._log_action(task, context, final_text, tool_calls_log)
 

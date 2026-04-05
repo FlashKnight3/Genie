@@ -49,7 +49,7 @@ async def startup_event():
 
 # Register routes
 from genie.api.routes import jobs, orchestrate, schedule, subcontractors  # noqa: E402
-from genie.api.routes import delays, leads, profile, quote  # noqa: E402
+from genie.api.routes import delays, leads, profile, quote, wishes, predict, stream  # noqa: E402
 
 
 def _protected_dependencies():
@@ -66,6 +66,9 @@ app.include_router(orchestrate.router, dependencies=_deps)
 app.include_router(delays.router, dependencies=_deps)
 app.include_router(leads.router, dependencies=_deps)
 app.include_router(quote.router, dependencies=_deps)
+app.include_router(wishes.router, dependencies=_deps)
+app.include_router(predict.router, dependencies=_deps)
+app.include_router(stream.router, dependencies=_deps)
 app.include_router(profile.router)
 
 

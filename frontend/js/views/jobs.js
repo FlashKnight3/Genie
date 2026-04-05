@@ -1,8 +1,31 @@
 import { api } from '../api.js';
-import { formatDate, priorityBadge, showModal, statusBadge, toast } from '../components.js';
+import { formatDate, priorityBadge, showModal, skillChips, statusBadge, toast } from '../components.js';
 
 export async function renderJobs(container) {
   container.innerHTML = `
+    <!-- Make a Wish panel (collapsible) -->
+    <div id="wish-panel" class="hidden mb-6">
+      <div id="wish-container" class="card p-6" style="border-color:rgba(217,119,6,0.4); background:rgba(15,23,42,0.8);">
+        <div class="flex items-start gap-4">
+          <div style="font-size:2.5rem;line-height:1;flex-shrink:0;filter:drop-shadow(0 0 8px rgba(217,119,6,0.6));">🪄</div>
+          <div class="flex-1">
+            <h3 class="text-base font-bold mb-1" style="background:linear-gradient(135deg,#fbbf24,#d97706);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Make a Wish</h3>
+            <p class="text-xs text-slate-500 mb-3">Describe any job in plain English and Genie will create it for you.</p>
+            <textarea id="wish-input" class="input text-sm" rows="3"
+              placeholder="e.g. I need a plumber in Austin to fix a leaking pipe under the sink, budget around $400, need it done this week"
+              style="border-color:rgba(217,119,6,0.3);resize:none;"></textarea>
+            <div class="flex items-center gap-3 mt-3">
+              <button id="wish-submit-btn" class="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold cursor-pointer" style="background:linear-gradient(135deg,#d97706,#b45309);color:#fff;border:none;transition:opacity 0.15s;">
+                ✨ Grant My Wish
+              </button>
+              <button id="wish-cancel-btn" class="btn-ghost text-sm py-2">Cancel</button>
+            </div>
+            <div id="wish-result" class="hidden mt-4 p-4 rounded-lg" style="background:#0f172a;border:1px solid rgba(34,197,94,0.3);"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="flex items-center justify-between mb-6">
       <div class="flex items-center gap-3">
         <select id="filter-status" class="input w-40 text-sm">
@@ -17,9 +40,14 @@ export async function renderJobs(container) {
         </select>
         <input id="filter-search" class="input w-52 text-sm" placeholder="Search jobs…" />
       </div>
-      <button id="new-job-btn" class="btn-primary flex items-center gap-2">
-        <span class="text-lg leading-none">+</span> New Job
-      </button>
+      <div class="flex items-center gap-2">
+        <button id="wish-toggle-btn" class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer" style="background:linear-gradient(135deg,rgba(217,119,6,0.2),rgba(180,83,9,0.2));color:#fbbf24;border:1px solid rgba(217,119,6,0.35);transition:all 0.15s;">
+          🪄 Make a Wish
+        </button>
+        <button id="new-job-btn" class="btn-primary flex items-center gap-2">
+          <span class="text-lg leading-none">+</span> New Job
+        </button>
+      </div>
     </div>
     <div class="card overflow-hidden">
       <div id="jobs-table-container"></div>
@@ -162,6 +190,78 @@ export async function renderJobs(container) {
         toast(err.message, 'error');
       }
     });
+  });
+
+  // Make a Wish toggle
+  document.getElementById('wish-toggle-btn').addEventListener('click', () => {
+    const panel = document.getElementById('wish-panel');
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) {
+      document.getElementById('wish-input').focus();
+    }
+  });
+
+  document.getElementById('wish-cancel-btn').addEventListener('click', () => {
+    document.getElementById('wish-panel').classList.add('hidden');
+    document.getElementById('wish-input').value = '';
+    document.getElementById('wish-result').classList.add('hidden');
+  });
+
+  document.getElementById('wish-submit-btn').addEventListener('click', async () => {
+    const input = document.getElementById('wish-input');
+    const wish = input.value.trim();
+    if (!wish) { toast('Please describe your job first.', 'error'); return; }
+
+    const btn = document.getElementById('wish-submit-btn');
+    const container = document.getElementById('wish-container');
+    const resultEl = document.getElementById('wish-result');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Summoning Genie…';
+    resultEl.classList.add('hidden');
+
+    try {
+      const data = await api.wishes.make(wish);
+      const p = data?.parsed || {};
+      const job = data?.job || {};
+
+      // Wish granted animation
+      container.classList.add('wish-granted');
+      setTimeout(() => container.classList.remove('wish-granted'), 800);
+
+      resultEl.classList.remove('hidden');
+      resultEl.innerHTML = `
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-green-400 font-semibold text-sm">✓ Wish Granted!</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3 text-xs">
+          <div><span class="text-slate-500">Title:</span> <span class="text-slate-200 font-medium">${p.title || job.title || '—'}</span></div>
+          <div><span class="text-slate-500">Location:</span> <span class="text-slate-200">${p.location || '—'}</span></div>
+          <div><span class="text-slate-500">Budget:</span> <span class="text-slate-200">$${(p.budget || 0).toLocaleString()}</span></div>
+          <div><span class="text-slate-500">Priority:</span> <span class="text-slate-200">${p.priority || 'medium'}</span></div>
+          <div><span class="text-slate-500">Start:</span> <span class="text-slate-200">${p.start_date || '—'}</span></div>
+          <div><span class="text-slate-500">End:</span> <span class="text-slate-200">${p.end_date || '—'}</span></div>
+        </div>
+        <div class="mt-2 flex flex-wrap gap-1">${(p.required_skills || []).map(s => `<span class="skill-chip">${s}</span>`).join('')}</div>
+        <div class="mt-3 flex gap-2">
+          <a href="#job/${job.id}" class="btn-primary text-xs py-1.5 px-3">View Job →</a>
+          <button id="wish-another-btn" class="btn-ghost text-xs py-1.5 px-3">Make Another</button>
+        </div>`;
+
+      document.getElementById('wish-another-btn')?.addEventListener('click', () => {
+        input.value = '';
+        resultEl.classList.add('hidden');
+        input.focus();
+      });
+
+      toast(`✨ Job "${p.title || 'New job'}" created!`, 'success');
+      await loadJobs();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '✨ Grant My Wish';
+    }
   });
 
   await loadJobs();

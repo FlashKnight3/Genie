@@ -83,9 +83,12 @@ async def delegate_to_agent(
     # Create a child registry that prevents further delegation
     child_registry = registry.child_registry(_depth + 1)
     agent = agent_cls(db, child_registry)
+    # Thread the event_callback through to child agents if present
+    callback = getattr(registry, "event_callback", None)
     result = await agent.run(
         task,
         context,
         max_iterations=registry._specialist_max_iterations,
+        event_callback=callback,
     )
     return {"agent": agent_name, "result": result.summary, "success": result.success}

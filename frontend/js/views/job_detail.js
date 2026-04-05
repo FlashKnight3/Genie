@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { formatDate, formatDateTime, hideAgentOverlay, priorityBadge, ratingStars, severityBadge, showAgentOverlay, skillChips, statusBadge, toast } from '../components.js';
+import { countUp, formatDate, formatDateTime, hideAgentOverlay, hideMissionControlOverlay, priorityBadge, ratingStars, severityBadge, showAgentOverlay, showMissionControlOverlay, showModal, skillChips, statusBadge, toast } from '../components.js';
 
 const SPECIALIST_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -50,6 +50,9 @@ export async function renderJobDetail(container, jobId) {
       </div>
       <div class="flex flex-col items-end gap-2 max-w-sm">
         <div class="flex flex-wrap items-end justify-end gap-2">
+          <button id="predict-btn" class="btn-ghost flex items-center gap-1.5 text-sm px-3 py-2" title="AI success probability prediction">
+            🔮 Predict
+          </button>
           <div class="flex flex-col items-end gap-0.5">
             <label for="run-max-specialists" class="text-xs font-medium text-slate-400">Specialist agents</label>
             <select id="run-max-specialists" class="input text-sm py-2 min-w-[10.5rem]" title="How many delegated specialist runs (matching, risk, etc.) the project manager may start">
@@ -59,9 +62,15 @@ export async function renderJobDetail(container, jobId) {
               ).join('')}
             </select>
           </div>
-          <button id="run-agent-btn" class="btn-primary flex items-center gap-2 text-base px-6 py-3">
-            🤖 Run Agent
-          </button>
+          <div class="flex items-stretch gap-0">
+            <button id="run-agent-btn" class="btn-primary flex items-center gap-2 text-base px-5 py-3" style="border-radius:0.5rem 0 0 0.5rem;">
+              🤖 Run Agent
+            </button>
+            <button id="live-mode-btn" title="Live mode: stream agent activity in real-time" class="btn-ghost text-xs px-2.5 py-3 flex items-center gap-1" style="border-radius:0 0.5rem 0.5rem 0; border-left:none; background:#1e293b;">
+              <span id="live-mode-indicator" style="width:7px;height:7px;border-radius:50%;background:#475569;flex-shrink:0;transition:background 0.2s;"></span>
+              Live
+            </button>
+          </div>
         </div>
         <details class="text-xs text-slate-500 w-full">
           <summary class="cursor-pointer text-slate-500 hover:text-slate-400 select-none text-right">Advanced — prompt rounds</summary>
@@ -197,39 +206,216 @@ export async function renderJobDetail(container, jobId) {
 
   loadTab('schedule');
 
+  // Live mode toggle
+  let liveMode = false;
+  document.getElementById('live-mode-btn').addEventListener('click', () => {
+    liveMode = !liveMode;
+    const indicator = document.getElementById('live-mode-indicator');
+    if (indicator) indicator.style.background = liveMode ? '#4ade80' : '#475569';
+    const liveBtn = document.getElementById('live-mode-btn');
+    if (liveBtn) liveBtn.style.color = liveMode ? '#4ade80' : '#94a3b8';
+    toast(liveMode ? '📡 Live mode on — next run will stream in real-time' : 'Live mode off', 'info');
+  });
+
+  // Crystal Ball predict button
+  document.getElementById('predict-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('predict-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Gazing…';
+    try {
+      const data = await api.predict.run(jobId);
+      const pred = data?.prediction || {};
+      const prob = pred.success_probability ?? 50;
+      const barColor = prob >= 70 ? '#22c55e' : prob >= 40 ? '#f59e0b' : '#ef4444';
+      const tlIcon = { on_track: '✅', at_risk: '⚠️', overdue: '🔴' }[pred.timeline_assessment] || '📍';
+
+      const modal = showModal(`
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-lg font-bold text-slate-100">🔮 Crystal Ball</h2>
+          <button id="close-predict-modal" class="text-slate-500 hover:text-slate-300 text-2xl leading-none">&times;</button>
+        </div>
+        <p class="text-xs text-slate-500 mb-5 text-center">${data?.job_title || job.title}</p>
+
+        <!-- Crystal ball visualization -->
+        <div style="display:flex;align-items:center;justify-content:center;margin-bottom:1.5rem;">
+          <div style="position:relative;width:140px;height:140px;flex-shrink:0;">
+            <svg width="140" height="140" viewBox="0 0 140 140">
+              <defs>
+                <radialGradient id="ballGrad" cx="38%" cy="35%" r="60%">
+                  <stop offset="0%" stop-color="#818cf8" stop-opacity="0.9"/>
+                  <stop offset="40%" stop-color="#6366f1" stop-opacity="0.7"/>
+                  <stop offset="100%" stop-color="#1e1b4b" stop-opacity="0.95"/>
+                </radialGradient>
+                <radialGradient id="glowGrad" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#818cf8" stop-opacity="0.25"/>
+                  <stop offset="100%" stop-color="#818cf8" stop-opacity="0"/>
+                </radialGradient>
+              </defs>
+              <circle cx="70" cy="70" r="68" fill="url(#glowGrad)" style="animation:crystalPulse 2s ease-in-out infinite;"/>
+              <circle cx="70" cy="70" r="58" fill="url(#ballGrad)" stroke="#6366f1" stroke-width="1" stroke-opacity="0.4"/>
+              <ellipse cx="52" cy="50" rx="12" ry="7" fill="white" fill-opacity="0.12" transform="rotate(-30 52 50)"/>
+            </svg>
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+              <div id="prob-num" style="font-size:2rem;font-weight:800;color:#e0e7ff;line-height:1;text-shadow:0 0 20px rgba(99,102,241,0.8);">0%</div>
+              <div style="font-size:0.6rem;color:#818cf8;letter-spacing:0.1em;margin-top:2px;text-transform:uppercase;">${pred.confidence || 'medium'}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Probability bar -->
+        <div style="margin-bottom:1.25rem;">
+          <div style="background:#1e293b;border-radius:9999px;height:8px;overflow:hidden;">
+            <div id="prob-bar" style="height:100%;width:0%;background:${barColor};border-radius:9999px;transition:width 1.2s cubic-bezier(0.34,1.56,0.64,1);"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:0.4rem;">
+            <span style="font-size:0.7rem;color:#475569;">Low</span>
+            <span style="font-size:0.7rem;color:${barColor};font-weight:600;">${prob}% success probability</span>
+            <span style="font-size:0.7rem;color:#475569;">High</span>
+          </div>
+        </div>
+
+        <!-- Timeline assessment -->
+        <div style="display:flex;justify-content:center;margin-bottom:1.25rem;">
+          <span style="background:#1e293b;border:1px solid #334155;border-radius:9999px;padding:0.25rem 0.875rem;font-size:0.75rem;color:#cbd5e1;">${tlIcon} ${(pred.timeline_assessment || 'on_track').replace(/_/g, ' ')}</span>
+        </div>
+
+        <!-- Risk factors -->
+        ${(pred.risk_factors || []).length ? `
+        <div style="margin-bottom:1rem;">
+          <h4 style="font-size:0.75rem;font-weight:700;color:#f87171;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem;">Risk Factors</h4>
+          <div class="space-y-1.5">
+            ${pred.risk_factors.map(f => {
+              const ic = { low: '#22c55e', medium: '#f59e0b', high: '#ef4444' }[f.impact] || '#94a3b8';
+              return `<div style="display:flex;gap:0.75rem;align-items:flex-start;border-left:3px solid ${ic};padding-left:0.75rem;background:rgba(15,23,42,0.4);padding:0.5rem 0.75rem;border-radius:0 0.375rem 0.375rem 0;">
+                <div>
+                  <span style="font-size:0.75rem;font-weight:600;color:#e2e8f0;">${f.factor}</span>
+                  <span style="font-size:0.65rem;color:${ic};margin-left:0.5rem;text-transform:uppercase;">${f.impact}</span>
+                  <p style="font-size:0.7rem;color:#64748b;margin-top:0.15rem;">${f.detail}</p>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>` : ''}
+
+        <!-- Positive factors -->
+        ${(pred.positive_factors || []).length ? `
+        <div style="margin-bottom:1rem;">
+          <h4 style="font-size:0.75rem;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem;">Positive Factors</h4>
+          <div class="space-y-1">
+            ${pred.positive_factors.map(f => `
+              <div style="font-size:0.75rem;color:#86efac;padding:0.35rem 0.75rem;background:rgba(34,197,94,0.07);border-radius:0.375rem;border:1px solid rgba(34,197,94,0.15);">
+                ✓ <strong>${f.factor}</strong> — ${f.detail}
+              </div>`).join('')}
+          </div>
+        </div>` : ''}
+
+        <!-- Recommendation -->
+        ${pred.recommendation ? `
+        <div style="background:rgba(217,119,6,0.08);border:1px solid rgba(217,119,6,0.25);border-radius:0.5rem;padding:0.75rem 1rem;">
+          <span style="font-size:0.7rem;font-weight:700;color:#fbbf24;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:0.3rem;">Recommendation</span>
+          <p style="font-size:0.8rem;color:#fde68a;">${pred.recommendation}</p>
+        </div>` : ''}`);
+
+      modal.querySelector('#close-predict-modal')?.addEventListener('click', () => modal.remove());
+
+      // Animate the ball count-up and probability bar
+      setTimeout(() => {
+        const probNum = document.getElementById('prob-num');
+        const probBar = document.getElementById('prob-bar');
+        if (probNum) {
+          const start = performance.now();
+          requestAnimationFrame(function step(now) {
+            const t = Math.min((now - start) / 1400, 1);
+            const eased = 1 - Math.pow(1 - t, 3);
+            probNum.textContent = Math.round(eased * prob) + '%';
+            if (t < 1) requestAnimationFrame(step);
+          });
+        }
+        if (probBar) setTimeout(() => { probBar.style.width = prob + '%'; }, 100);
+      }, 50);
+
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔮 Predict';
+    }
+  });
+
   // Run Agent button
   document.getElementById('run-agent-btn').addEventListener('click', async () => {
     const btn = document.getElementById('run-agent-btn');
     btn.disabled = true;
-    const overlay = showAgentOverlay(job.title);
-    try {
-      const limits = buildOrchestrateLimits();
-      const result = await api.orchestrate.run(jobId, null, limits);
-      hideAgentOverlay();
-      toast(`✓ Agents completed — ${result?.tool_calls_count || 0} tool calls made`, 'success');
 
-      // Show summary in a nice way
-      if (result?.summary) {
-        const summaryEl = document.createElement('div');
-        summaryEl.className = 'card p-4 mb-4 border-indigo-700';
-        summaryEl.style.borderColor = '#4f46e5';
-        summaryEl.innerHTML = `
-          <div class="flex items-start gap-3">
-            <span class="text-xl">🤖</span>
-            <div>
-              <p class="text-sm font-semibold text-indigo-300 mb-1">Agent Summary</p>
-              <p class="text-xs text-slate-400">${result.summary.slice(0, 400)}${result.summary.length > 400 ? '…' : ''}</p>
-            </div>
-          </div>`;
-        container.insertBefore(summaryEl, container.querySelector('.card.overflow-hidden'));
+    const limits = buildOrchestrateLimits();
+
+    if (liveMode) {
+      // Live mode: SSE stream
+      const mc = showMissionControlOverlay(job.title);
+      const baseUrl = api.getBaseUrl();
+      const params = new URLSearchParams({ max_specialist_agents: limits.max_specialist_agents || 3 });
+      if (limits.max_llm_rounds) params.set('max_llm_rounds', limits.max_llm_rounds);
+      const es = new EventSource(`${baseUrl}/orchestrate/stream/${jobId}?${params}`);
+
+      es.onmessage = (e) => {
+        try {
+          const event = JSON.parse(e.data);
+          mc.appendLog(event);
+          if (event.type === 'done') {
+            es.close();
+            mc.complete(event.success, event.summary);
+            setTimeout(async () => {
+              hideMissionControlOverlay();
+              if (event.success) {
+                toast(`✓ Agents completed — ${event.tool_calls_count || 0} tool calls`, 'success');
+                await renderJobDetail(container, jobId);
+              } else {
+                toast(event.error || 'Agent failed', 'error');
+                btn.disabled = false;
+              }
+            }, 2000);
+          }
+        } catch { /* ignore parse errors */ }
+      };
+
+      es.onerror = () => {
+        es.close();
+        mc.complete(false);
+        setTimeout(() => {
+          hideMissionControlOverlay();
+          toast('Connection lost or agent error', 'error');
+          btn.disabled = false;
+        }, 1500);
+      };
+    } else {
+      // Standard mode: blocking call with spinner
+      const overlay = showAgentOverlay(job.title);
+      try {
+        const result = await api.orchestrate.run(jobId, null, limits);
+        hideAgentOverlay();
+        toast(`✓ Agents completed — ${result?.tool_calls_count || 0} tool calls made`, 'success');
+
+        if (result?.summary) {
+          const summaryEl = document.createElement('div');
+          summaryEl.className = 'card p-4 mb-4';
+          summaryEl.style.borderColor = '#4f46e5';
+          summaryEl.innerHTML = `
+            <div class="flex items-start gap-3">
+              <span class="text-xl">🤖</span>
+              <div>
+                <p class="text-sm font-semibold text-indigo-300 mb-1">Agent Summary</p>
+                <p class="text-xs text-slate-400">${result.summary.slice(0, 400)}${result.summary.length > 400 ? '…' : ''}</p>
+              </div>
+            </div>`;
+          container.insertBefore(summaryEl, container.querySelector('.card.overflow-hidden'));
+        }
+
+        await renderJobDetail(container, jobId);
+      } catch (err) {
+        hideAgentOverlay();
+        toast(err.message, 'error');
+        btn.disabled = false;
       }
-
-      // Refresh job data
-      await renderJobDetail(container, jobId);
-    } catch (err) {
-      hideAgentOverlay();
-      toast(err.message, 'error');
-      btn.disabled = false;
     }
   });
 }
