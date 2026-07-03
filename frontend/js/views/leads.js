@@ -113,7 +113,7 @@ function showLeadForm() {
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Phone (optional)</label>
-          <input id="lead-phone" class="input" placeholder="408-722-1995" value="408-722-1995" />
+          <input id="lead-phone" class="input" placeholder="+14087221995" value="+14087221995" />
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Message</label>

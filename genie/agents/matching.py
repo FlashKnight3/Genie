@@ -21,6 +21,7 @@ class MatchingAgent(BaseAgent):
             "7. One sentence: who you assigned and when they are scheduled. Stop.\n\n"
             "Rules:\n"
             "- Do not call search_subcontractors more than once.\n"
+            "- Do not call get_schedule before assign_subcontractor.\n"
             "- assign_subcontractor must run every time — never stop after detect_conflicts alone.\n"
             "- If find_available_slots returns no slots, create_schedule anyway using job start_date 08:00 "
             "to same day 17:00 (ISO datetimes).\n"

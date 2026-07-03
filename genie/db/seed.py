@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from genie.db.models import Job, Lead, Message, Schedule, Subcontractor
 
-# All seeded subs use these for Twilio / Resend smoke tests (E.164 applied at send time).
-DEMO_CONTACT_PHONE = "408-722-1995"
+# All seeded subs use these for Twilio / Resend smoke tests (store E.164 with +).
+DEMO_CONTACT_PHONE = "+14087221995"
 DEMO_CONTACT_EMAIL = "z.hensley.m@gmail.com"
 
 SUBCONTRACTORS = [

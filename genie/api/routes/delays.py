@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from genie.api.schemas import SuccessResponse
 from genie.config import settings
 from genie.db.database import get_session
-from genie.db.models import Job, Message, Subcontractor
+from genie.db.models import Job, Subcontractor
 
 router = APIRouter(prefix="/delays", tags=["delays"])
 
@@ -90,26 +90,18 @@ async def send_delay_followup(job_id: str, db: AsyncSession = Depends(get_sessio
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     draft_sms = await _draft_followup(client, job, sub, days_overdue)
 
-    # Log the message and attempt real delivery
-    from genie.tools.communication_tools import _send_twilio_sms, twilio_sms_configured
+    from genie.tools.communication_tools import send_message
 
-    delivery_status = "logged"
-    if twilio_sms_configured() and sub.phone:
-        try:
-            delivery_status = await _send_twilio_sms(sub.phone, draft_sms)
-        except Exception as exc:
-            delivery_status = f"sms_failed: {exc}"
-
-    msg = Message(
+    send_result = await send_message(
+        db,
+        sub.id,
+        "sms",
+        f"Follow-up: {job.title}",
+        draft_sms,
         job_id=job.id,
-        subcontractor_id=sub.id,
-        direction="outbound",
-        channel="sms",
-        subject=f"Follow-up: {job.title}",
-        body=draft_sms,
-        status="sent",
     )
-    db.add(msg)
+    if not send_result.get("success"):
+        raise HTTPException(status_code=400, detail=send_result.get("error", "Could not log message"))
 
     # Mark job as at_risk so it bubbles up in the UI
     if job.status != "at_risk":
@@ -121,10 +113,10 @@ async def send_delay_followup(job_id: str, db: AsyncSession = Depends(get_sessio
         success=True,
         message="Follow-up sent.",
         data={
-            "message_id": msg.id,
+            "message_id": send_result["message_id"],
             "recipient": sub.name,
             "sms_body": draft_sms,
-            "delivery_status": delivery_status,
+            "delivery_status": send_result.get("delivery_status", "logged"),
         },
     )
 

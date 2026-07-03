@@ -1,4 +1,5 @@
 """Tools for sending and managing communications with subcontractors."""
+import asyncio
 import base64
 import html
 import logging
@@ -10,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from genie.config import settings
+from genie.db.database import AsyncSessionLocal
 from genie.db.models import Message, Subcontractor
 
 logger = logging.getLogger(__name__)
@@ -50,7 +52,7 @@ TOOL_DEFINITIONS = [
         "description": (
             "Send a message to a subcontractor via SMS or email and log it. "
             "Use channel='sms' for short urgent messages, 'email' for longer formal ones. "
-            "Sends a real SMS via Twilio or real email via Resend when credentials are configured."
+            "When Twilio/Resend are configured, delivery is queued and finishes shortly after this tool returns."
         ),
         "input_schema": {
             "type": "object",
@@ -116,13 +118,45 @@ async def notify_assigned_subcontractor_after_orchestrate(
     email_body = "\n".join(email_lines)
     sms_body = truncate_for_sms(f"{job_title} — {job_status}. {agent_summary or ''}")
 
-    sms_result = await send_message(
-        db, subcontractor_id, "sms", subject, sms_body, job_id=job_id
-    )
-    email_result = await send_message(
-        db, subcontractor_id, "email", subject, email_body, job_id=job_id
+    sms_result, email_result = await asyncio.gather(
+        send_message(db, subcontractor_id, "sms", subject, sms_body, job_id=job_id),
+        send_message(db, subcontractor_id, "email", subject, email_body, job_id=job_id),
     )
     return {"sms": sms_result, "email": email_result}
+
+
+async def _deliver_outbound_background(
+    message_id: str,
+    subcontractor_id: str,
+    channel: str,
+    subject: str,
+    body: str,
+    attachments: list[dict] | None = None,
+) -> None:
+    """Run Twilio/Resend after the request/tool turn has returned (own DB session)."""
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(Subcontractor).where(Subcontractor.id == subcontractor_id))
+            sub = result.scalar_one_or_none()
+            if not sub:
+                logger.warning("Background delivery: subcontractor %s not found", subcontractor_id)
+                return
+
+            if channel == "sms" and twilio_sms_configured():
+                await _send_twilio_sms(sub.phone, body)
+            elif channel == "email" and settings.resend_api_key.strip():
+                await _send_resend_email(sub.email, subject, body, attachments=attachments)
+    except Exception as exc:
+        logger.warning("Background %s delivery failed for message %s: %s", channel, message_id, exc)
+        try:
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(select(Message).where(Message.id == message_id))
+                msg = result.scalar_one_or_none()
+                if msg:
+                    msg.status = "failed"
+                    await session.commit()
+        except Exception:
+            logger.exception("Could not mark message %s failed after delivery error", message_id)
 
 
 async def send_message(
@@ -133,6 +167,8 @@ async def send_message(
     body: str,
     job_id: str | None = None,
     attachments: list[dict] | None = None,
+    *,
+    background_deliver: bool = True,
 ) -> dict:
     # Verify subcontractor exists
     result = await db.execute(select(Subcontractor).where(Subcontractor.id == subcontractor_id))
@@ -154,22 +190,36 @@ async def send_message(
     await db.commit()
     await db.refresh(msg)
 
-    # Attempt real delivery based on channel
     delivery_status = "simulated"
     delivery_error = None
+    wants_sms = channel == "sms" and twilio_sms_configured()
+    wants_email = channel == "email" and settings.resend_api_key.strip()
 
-    if channel == "sms" and twilio_sms_configured():
-        try:
-            delivery_status = await _send_twilio_sms(sub.phone, body)
-        except Exception as exc:
-            delivery_error = str(exc)
-            logger.warning("Twilio SMS failed: %s", exc)
-    elif channel == "email" and settings.resend_api_key.strip():
-        try:
-            delivery_status = await _send_resend_email(sub.email, subject, body, attachments=attachments)
-        except Exception as exc:
-            delivery_error = str(exc)
-            logger.warning("Resend email failed: %s", exc)
+    if wants_sms or wants_email:
+        if background_deliver:
+            asyncio.create_task(
+                _deliver_outbound_background(
+                    msg.id,
+                    subcontractor_id,
+                    channel,
+                    subject,
+                    body,
+                    attachments=attachments,
+                )
+            )
+            delivery_status = "queued"
+        elif wants_sms:
+            try:
+                delivery_status = await _send_twilio_sms(sub.phone, body)
+            except Exception as exc:
+                delivery_error = str(exc)
+                logger.warning("Twilio SMS failed: %s", exc)
+        elif wants_email:
+            try:
+                delivery_status = await _send_resend_email(sub.email, subject, body, attachments=attachments)
+            except Exception as exc:
+                delivery_error = str(exc)
+                logger.warning("Resend email failed: %s", exc)
 
     result: dict = {
         "success": True,

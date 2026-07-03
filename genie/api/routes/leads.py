@@ -1,4 +1,6 @@
 """Lead capture and AI auto-response."""
+import asyncio
+import logging
 import uuid
 
 import anthropic
@@ -13,6 +15,16 @@ from genie.db.database import get_session
 from genie.db.models import Job, Lead
 
 router = APIRouter(prefix="/leads", tags=["leads"])
+logger = logging.getLogger(__name__)
+
+
+async def _send_lead_auto_reply_email(to_email: str, subject: str, body: str) -> None:
+    from genie.tools.communication_tools import _send_resend_email
+
+    try:
+        await _send_resend_email(to_email=to_email, subject=subject, body=body)
+    except Exception as exc:
+        logger.warning("Lead auto-reply email failed for %s: %s", to_email, exc)
 
 
 class LeadIn(BaseModel):
@@ -59,23 +71,25 @@ async def submit_lead(body: LeadIn, db: AsyncSession = Depends(get_session)):
     lead.auto_reply_sent = True
     await db.commit()
 
-    # Send the auto-reply email if Resend is configured
+    # Queue auto-reply email; HTTP response returns without waiting on Resend.
     delivery_status = "logged"
     if settings.resend_api_key.strip():
-        from genie.tools.communication_tools import _send_resend_email
-        try:
-            await _send_resend_email(
-                to_email=body.email,
-                subject="Thanks for reaching out — we'll be in touch shortly",
-                body=auto_reply,
+        asyncio.create_task(
+            _send_lead_auto_reply_email(
+                body.email,
+                "Thanks for reaching out — we'll be in touch shortly",
+                auto_reply,
             )
-            delivery_status = "sent"
-        except Exception as exc:
-            delivery_status = f"email_failed: {exc}"
+        )
+        delivery_status = "queued"
 
     return SuccessResponse(
         success=True,
-        message="Lead captured and auto-response sent.",
+        message=(
+            "Lead captured; auto-reply email queued."
+            if settings.resend_api_key.strip()
+            else "Lead captured."
+        ),
         data={
             "lead_id": lead.id,
             "auto_reply": auto_reply,

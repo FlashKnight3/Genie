@@ -78,6 +78,7 @@ class BaseAgent(ABC):
             response = await self.client.messages.create(
                 model=settings.claude_model,
                 max_tokens=settings.claude_max_tokens,
+                temperature=0,
                 system=self.system_prompt,
                 tools=tool_schemas,  # type: ignore[arg-type]
                 messages=messages,
@@ -146,7 +147,11 @@ class BaseAgent(ABC):
 
     def _build_user_message(self, task: str, context: dict) -> str:
         ctx_str = "\n".join(f"  {k}: {v}" for k, v in context.items()) if context else "  (none)"
-        return f"Task: {task}\n\nContext:\n{ctx_str}"
+        return (
+            f"Task: {task}\n\nContext:\n{ctx_str}\n\n"
+            "Efficiency: use the minimum number of tool rounds. Follow your playbook in order; "
+            "do not make exploratory or duplicate tool calls."
+        )
 
     async def _log_action(
         self,

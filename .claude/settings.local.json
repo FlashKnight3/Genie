@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(source .venv/bin/activate)",
+      "Bash(find . -name *.venv -o -name activate)",
+      "Bash(pip show:*)",
+      "Bash(source venv/bin/activate)"
+    ]
+  }
+}

@@ -1,13 +1,13 @@
 """Orchestration routes — trigger agents on jobs."""
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from genie.api.schemas import OrchestrateRequest, OrchestrateResponse, SuccessResponse
 from genie.config import settings
-from genie.db.database import get_session
+from genie.db.database import AsyncSessionLocal, get_session
 from genie.db.models import AgentLog, Job
 from genie.tools.communication_tools import notify_assigned_subcontractor_after_orchestrate
 from genie.tools.registry import DelegateBudget, ToolRegistry
@@ -19,27 +19,58 @@ logger = logging.getLogger(__name__)
 
 def _resolve_orchestrate_limits(body: OrchestrateRequest) -> tuple[int, int, int]:
     """Returns (pm_max_iterations, delegate_budget, specialist_max_iterations)."""
-    pm_cap = settings.orchestrate_max_rounds_cap
-    del_cap = settings.orchestrate_max_delegate_cap
-
     pm_iters = settings.max_agent_iterations if body.max_llm_rounds is None else body.max_llm_rounds
-    pm_iters = max(1, min(pm_iters, pm_cap))
+    pm_iters = max(1, pm_iters)
 
     delegates = settings.max_delegate_calls if body.max_specialist_agents is None else body.max_specialist_agents
-    delegates = max(0, min(delegates, del_cap))
+    delegates = max(0, delegates)
 
     spec_iters = (
         settings.max_specialist_iterations
         if body.max_rounds_per_specialist is None
         else body.max_rounds_per_specialist
     )
-    spec_iters = max(1, min(spec_iters, pm_cap))
+    spec_iters = max(1, spec_iters)
 
     return pm_iters, delegates, spec_iters
 
 
+async def _post_orchestrate_notify_background(job_id: str, agent_summary: str) -> None:
+    """SMS/email log + delivery after the HTTP response (separate session)."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Job).where(Job.id == job_id))
+        job_after = result.scalar_one_or_none()
+        if not job_after or not job_after.assigned_subcontractor_id:
+            logger.info(
+                "Post-orchestrate SMS/email skipped — no subcontractor assigned on job %s after run",
+                job_id,
+            )
+            return
+        sched = await get_schedule(session, job_id=job_id)
+        sched_line = None
+        if sched.get("count"):
+            first = sched["schedules"][0]
+            sched_line = f"Next window: {first['scheduled_start']} → {first['scheduled_end']}"
+        try:
+            await notify_assigned_subcontractor_after_orchestrate(
+                session,
+                job_id=job_id,
+                job_title=job_after.title,
+                job_status=job_after.status,
+                subcontractor_id=job_after.assigned_subcontractor_id,
+                agent_summary=agent_summary,
+                schedule_summary=sched_line,
+            )
+        except Exception:
+            logger.exception("Post-orchestrate SMS/email notify failed for job %s", job_id)
+
+
 @router.post("", response_model=OrchestrateResponse)
-async def orchestrate_job(body: OrchestrateRequest, db: AsyncSession = Depends(get_session)):
+async def orchestrate_job(
+    body: OrchestrateRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_session),
+):
     # Verify job exists
     result = await db.execute(select(Job).where(Job.id == body.job_id))
     job = result.scalar_one_or_none()
@@ -80,33 +111,8 @@ async def orchestrate_job(body: OrchestrateRequest, db: AsyncSession = Depends(g
                 filled.get("via", "slots"),
             )
 
-    # Always notify assigned subcontractor on both SMS + email when credentials allow (separate from LLM tool calls).
-    refreshed = await db.execute(select(Job).where(Job.id == body.job_id))
-    job_after = refreshed.scalar_one_or_none()
-    if job_after and job_after.assigned_subcontractor_id:
-        sched = await get_schedule(db, job_id=body.job_id)
-        sched_line = None
-        if sched.get("count"):
-            first = sched["schedules"][0]
-            sched_line = f"Next window: {first['scheduled_start']} → {first['scheduled_end']}"
-        try:
-            await notify_assigned_subcontractor_after_orchestrate(
-                db,
-                job_id=body.job_id,
-                job_title=job_after.title,
-                job_status=job_after.status,
-                subcontractor_id=job_after.assigned_subcontractor_id,
-                agent_summary=agent_result.summary,
-                schedule_summary=sched_line,
-            )
-        except Exception:
-            # Orchestration already succeeded; notification failures must not drop the API response.
-            logger.exception("Post-orchestrate SMS/email notify failed for job %s", body.job_id)
-    elif job_after:
-        logger.info(
-            "Post-orchestrate SMS/email skipped — no subcontractor assigned on job %s after run",
-            body.job_id,
-        )
+    # Notify assigned subcontractor after the response is sent; delivery itself is also non-blocking (see send_message).
+    background_tasks.add_task(_post_orchestrate_notify_background, body.job_id, agent_result.summary)
 
     return OrchestrateResponse(
         job_id=body.job_id,

@@ -20,6 +20,7 @@ class CommunicationAgent(BaseAgent):
             "- Risk / urgent: direct ask on SMS; email repeats with context\n\n"
             "Rules:\n"
             "- Call get_job exactly once.\n"
-            "- Call send_message exactly twice (sms then email), both to the assigned subcontractor only.\n"
+            "- Call send_message exactly twice (sms then email; prefer both tool calls in the same assistant turn), both to the assigned subcontractor only.\n"
+            "- After both send_message results return, reply with one confirmation line and end_turn — no other tools.\n"
             "- Never send to a subcontractor who is not assigned to the job."
         )

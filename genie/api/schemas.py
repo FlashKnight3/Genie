@@ -67,7 +67,7 @@ class SubcontractorResponse(BaseModel):
 class OrchestrateRequest(BaseModel):
     job_id: str
     task: Optional[str] = None  # defaults to "manage this job end-to-end"
-    # Optional caps (clamped server-side to orchestrate_*_cap in settings)
+    # Optional overrides for this run (defaults from MAX_* settings when omitted)
     max_llm_rounds: Optional[int] = Field(
         default=None,
         ge=1,
